@@ -5,12 +5,7 @@ export * from "./types";
 async function main() {
     try {
         await exec({
-            code: `use std::io::{ print };
-
-            fun main(): unit {
-                print("{}", 90);
-            }
-            `,
+            filepath: "code/src/app.la",
             config: {
                 call_main: true
             }

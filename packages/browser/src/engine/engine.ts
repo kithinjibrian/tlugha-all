@@ -5,15 +5,7 @@ import {
     Module,
     Cache
 } from "@kithinji/tlugha-core";
-
-async function exists(url: string) {
-    try {
-        const response = await fetch(url, { method: 'HEAD' });
-        return response.ok;
-    } catch (error) {
-        return false;
-    }
-}
+import { FS } from "../fs/fs";
 
 export class EngineBrowser extends Engine {
     constructor(
@@ -36,6 +28,8 @@ export class EngineBrowser extends Engine {
         node: ImportNode,
         _?: Record<string, any>
     ) {
+        const fs = FS.getInstance();
+
         const originalWd = this.wd;
         const name = node.identifier.name;
 
@@ -47,9 +41,9 @@ export class EngineBrowser extends Engine {
 
         let modPath: string | null = null;
 
-        if (await exists(localPath)) {
+        if (fs.exists(localPath)) {
             modPath = localPath;
-        } else if (await exists(localModPath)) {
+        } else if (fs.exists(localModPath)) {
             fileToImport = "__mod__.la";
             importWd = `${originalWd}/${name}`;
             modPath = `${importWd}/${fileToImport}`;

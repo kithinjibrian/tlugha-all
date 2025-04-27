@@ -3,7 +3,8 @@ import {
     Extension,
     ExtensionStore,
     Cache,
-    add_builtins
+    add_builtins,
+    id
 } from "@kithinji/tlugha-core";
 
 import {
@@ -14,6 +15,9 @@ import {
 import {
     lugha
 } from "./types"
+import { FS } from "./fs/fs";
+import { write_std } from "./std/std";
+import { parse } from "./path/path"
 
 class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";
@@ -79,24 +83,39 @@ class UploadBuiltins extends Extension<ASTVisitor> {
 }
 
 export async function exec({
+    filepath,
     code,
     config
 }: {
-    code: string,
+    code?: string,
+    filepath?: string,
     config?: Record<string, any>
 }) {
     let module: Module = new Module("root");
+    const fs = FS.getInstance();
+    fs.mkdir("/", "std");
 
-    const std = config?.std;
+    write_std();
 
-    ExtensionStore.get_instance().register(new UploadBuiltins(std))
+    let temp_filepath = null;
+    if (code) {
+        temp_filepath = id();
+        filepath = `${temp_filepath}.la`;
+        fs.writeFile(filepath, code);
+    }
+
+    if (!filepath) throw new Error("Filepath is empty");
+
+    const a = parse(filepath);
+
+    ExtensionStore.get_instance().register(new UploadBuiltins("/"))
 
     try {
         const engine = await lugha({
-            rd: "",
-            wd: "",
+            rd: a.dir,
+            wd: a.dir,
             module,
-            code
+            file: a.base
         })
 
         return await engine.call_main();

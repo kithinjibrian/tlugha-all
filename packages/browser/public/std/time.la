@@ -1,3 +1,0 @@
-fun now(): Date {
-    return builtin::__now__();
-}

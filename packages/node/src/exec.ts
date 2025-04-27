@@ -1,7 +1,8 @@
 import {
     add_builtins,
     Extension,
-    ExtensionStore
+    ExtensionStore,
+    id
 } from "@kithinji/tlugha-core";
 
 import {
@@ -17,16 +18,6 @@ import {
 
 import * as path from 'path';
 import { writeFile, unlink } from "fs/promises";
-
-function id(length = 21) {
-    const characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-        const index = Math.floor(Math.random() * characters.length);
-        result += characters[index];
-    }
-    return result;
-}
 
 class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";

@@ -1,5 +1,5 @@
 import axios from "axios"
-import { Type, StringType, Frame, NumberType } from "./types"
+import { Type, StringType, Frame, NumberType, Engine } from "./types"
 
 export type Builtin =
     {
@@ -55,10 +55,12 @@ export const builtin: Record<string, Builtin> = {
         async: true,
         exec: async (args: any[]) => {
 
+            const engine = args[0] as Engine;
+
             const frame = new Frame();
 
-            await args[0].execute_function(
-                args[2],
+            await engine.execute_function(
+                args[1],
                 [new NumberType(90)],
                 frame
             )

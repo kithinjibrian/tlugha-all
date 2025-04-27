@@ -5,29 +5,21 @@ import {
 } from "@kithinji/tlugha-core";
 
 import { EngineBrowser } from "../types";
+import { FS } from "../fs/fs";
 
 export async function lugha({
     rd,
     wd,
-    code,
     file,
     module,
 }: {
     rd: string,
     wd: string,
-    file?: string,
-    code?: string,
+    file: string,
     module: Module
 }): Promise<EngineBrowser> {
-    if (!code) {
-        if (file && wd) {
-            const mod_path = `${wd}/${file}`;
-            const response = await fetch(mod_path);
-            code = await response.text();
-        } else {
-            throw new Error("Empty code")
-        }
-    }
+    const fs = FS.getInstance();
+    const code = fs.readFile(`${wd}/${file}`);
 
     try {
         let lexer = new Lexer(code);

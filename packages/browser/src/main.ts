@@ -1,19 +1,33 @@
 export * from "./types";
 
+// import { FS } from "./fs/fs";
 // import { exec } from "./types";
 
 // async function main() {
-//     let code = `use std::io::{ print };
+//     const fs = FS.getInstance();
+
+//     fs.writeFile("/api.la", `
+// fun a(): unit {
+//     return 9011;
+// }
+// `)
+
+//     let code = `
+// import api;
+
+// use std::io::{ print };
 
 // fun main(): unit {
-//     print("{}", 90);
+//     print("{}", api::a());
 // }
 //     `
 
 //     try {
 //         await exec({
 //             code,
-//             std: "http://localhost:5173"
+//             config: {
+//                 std: "http://localhost:5173"
+//             }
 //         });
 
 //     } catch (e: any) {

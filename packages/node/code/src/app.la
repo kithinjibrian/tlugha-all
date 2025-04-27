@@ -1,5 +1,9 @@
 use std::io::{ print };
 
+builtin::__set_timeout__(fun (a: number): unit -> {
+    print("{}", a + 90);
+});
+
 fun main(): unit {
-    print("{}", 90);
+    // print("{}", 907);
 }
