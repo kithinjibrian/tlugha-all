@@ -1,3 +1,0 @@
-fun run(cmd: string): string {
-    return builtin::__shell__(cmd);
-}
