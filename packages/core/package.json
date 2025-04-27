@@ -1,6 +1,6 @@
 {
     "name": "@kithinji/tlugha-core",
-    "version": "1.0.10",
+    "version": "0.0.1",
     "main": "./dist/main.js",
     "module": "./dist/main.mjs",
     "types": "./dist/main.d.ts",
@@ -19,8 +19,8 @@
         "build": "tsup"
     },
     "devDependencies": {
-        "tsup": "^8.4.0",
         "ts-node": "^10.9.2",
+        "tsup": "^8.4.0",
         "typescript": "^5.7.2"
     }
 }
