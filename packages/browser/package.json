@@ -1,0 +1,32 @@
+{
+    "name": "@kithinji/tlugha-browser",
+    "version": "1.0.6",
+    "type": "module",
+    "main": "dist/main.cjs.js",
+    "module": "dist/main.es.js",
+    "types": "dist/main.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/main.d.ts",
+            "import": "./dist/main.es.js",
+            "require": "./dist/main.cjs.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build && tsc",
+        "prepublishOnly": "npm run build"
+    },
+    "devDependencies": {
+        "@types/node": "^22.15.2",
+        "typescript": "~5.7.2",
+        "vite": "^6.3.1"
+    },
+    "dependencies": {
+        "@kithinji/tlugha-core": "^1.0.9",
+        "axios": "^1.9.0"
+    }
+}

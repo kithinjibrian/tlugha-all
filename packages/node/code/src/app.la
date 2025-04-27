@@ -1,0 +1,11 @@
+use std::io::{ print };
+
+fun main(): unit {
+    let a = 90;
+    
+    fun inner(): unit {
+        print("{}", a);
+    }
+
+    inner();
+}

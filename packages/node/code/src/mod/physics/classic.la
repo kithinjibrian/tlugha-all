@@ -1,0 +1,5 @@
+import api;
+
+fun speed(): string {
+    return api::b;
+}
