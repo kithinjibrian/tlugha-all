@@ -16,6 +16,17 @@ import {
 } from "./types"
 
 import * as path from 'path';
+import { writeFile, unlink } from "fs/promises";
+
+function id(length = 21) {
+    const characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        const index = Math.floor(Math.random() * characters.length);
+        result += characters[index];
+    }
+    return result;
+}
 
 class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";
@@ -81,12 +92,24 @@ class UploadBuiltins extends Extension<ASTVisitor> {
 
 export async function exec({
     filepath,
+    code,
     config
 }: {
-    filepath: string,
+    code?: string,
+    filepath?: string,
     config?: Record<string, any>
 }) {
     let module: Module = new Module("root");
+
+    let temp_filepath = null;
+    if (code) {
+        temp_filepath = id();
+        filepath = `${temp_filepath}.la`;
+        await writeFile(filepath, code);
+    }
+
+    if (!filepath) throw new Error("Filepath is empty");
+
     const a = path.parse(filepath);
 
     ExtensionStore.get_instance().register(new UploadBuiltins(__dirname))
@@ -111,6 +134,9 @@ export async function exec({
     } catch (error) {
         throw error;
     } finally {
+        if (temp_filepath)
+            await unlink(filepath);
+
         Cache.get_instance().clear_cache()
     }
 }

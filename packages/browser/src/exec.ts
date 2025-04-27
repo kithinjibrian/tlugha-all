@@ -38,6 +38,8 @@ class UploadBuiltins extends Extension<ASTVisitor> {
                 add_builtins(builtin, { root });
             },
             async ({ current }: { current: Module }) => {
+                if (!this.std) return;
+
                 let module;
 
                 let cache = Cache.get_instance();
@@ -78,12 +80,14 @@ class UploadBuiltins extends Extension<ASTVisitor> {
 
 export async function exec({
     code,
-    std
+    config
 }: {
     code: string,
-    std: string
+    config?: Record<string, any>
 }) {
     let module: Module = new Module("root");
+
+    const std = config?.std;
 
     ExtensionStore.get_instance().register(new UploadBuiltins(std))
 
