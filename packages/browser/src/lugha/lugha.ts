@@ -4,9 +4,7 @@ import {
     Parser
 } from "@kithinji/tlugha-core";
 
-import {
-    Engine
-} from "../types"
+import { EngineBrowser } from "../types";
 
 export async function lugha({
     rd,
@@ -20,7 +18,7 @@ export async function lugha({
     file?: string,
     code?: string,
     module: Module
-}): Promise<Engine> {
+}): Promise<EngineBrowser> {
     if (!code) {
         if (file && wd) {
             const mod_path = `${wd}/${file}`;
@@ -38,7 +36,7 @@ export async function lugha({
         let parser = new Parser(tokens);
         let ast = parser.parse();
 
-        const engine = new Engine(
+        const engine = new EngineBrowser(
             rd,
             wd,
             ast,

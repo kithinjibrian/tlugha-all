@@ -1,11 +1,11 @@
 fun print<T>(format: string, ...rest: Array<T>): unit {
-    __print__(format, rest);
+    builtin::__print__(format, rest);
 }
 
 fun read(file: string, encoding: string): string {
-    return __read__(file, encoding);
+    return builtin::__read__(file, encoding);
 }
 
 fun write(file: string, data: string): unit {
-    __write__(file, data);
+    builtin::__write__(file, data);
 }

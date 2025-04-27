@@ -5,7 +5,7 @@ import {
 } from "@kithinji/tlugha-core";
 
 import {
-    Engine
+    EngineNode
 } from "../types"
 
 import * as path from 'path';
@@ -21,7 +21,7 @@ export async function lugha({
     rd: string,
     file: string,
     module: Module
-}): Promise<Engine> {
+}): Promise<EngineNode> {
     const file_path = path.join(wd, file);
     const code = readFileSync(file_path, 'utf-8')
 
@@ -32,7 +32,7 @@ export async function lugha({
         let parser = new Parser(tokens);
         let ast = parser.parse();
 
-        const engine = new Engine(
+        const engine = new EngineNode(
             rd,
             wd,
             ast,

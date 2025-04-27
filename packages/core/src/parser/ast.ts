@@ -1,3 +1,5 @@
+import { Frame } from "../types";
+
 export interface ASTVisitor {
     before_accept?(node: ASTNode, args?: Record<string, any>): any;
     after_accept?(node: ASTNode, args?: Record<string, any>): any;
@@ -166,6 +168,7 @@ export class ContinuationNode extends ASTNodeBase {
 
 export class FunctionDecNode extends ASTNodeBase {
     type = 'FunctionDec';
+    public frame: Frame | null = null;
 
     constructor(
         public identifier: IdentifierNode,
@@ -210,6 +213,7 @@ export class MemberDecNode extends FunctionDecNode {
 
 export class LambdaNode extends ASTNodeBase {
     type = 'Lambda';
+    public frame: Frame | null = null;
 
     constructor(
         public params: ParametersListNode | undefined,

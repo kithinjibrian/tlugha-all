@@ -1,19 +1,18 @@
-import { Extension, ExtensionStore } from "@kithinji/tlugha-core";
-import { create_object } from "@kithinji/tlugha-core";
+import {
+    add_builtins,
+    Extension,
+    ExtensionStore
+} from "@kithinji/tlugha-core";
 
 import {
     ASTVisitor,
-    BlockNode,
-    FunctionDecNode,
-    IdentifierNode,
     Module,
-    VariableNode
+    Cache
 } from "@kithinji/tlugha-core";
 
 import {
     builtin,
-    lugha,
-    Cache,
+    lugha
 } from "./types"
 
 import * as path from 'path';
@@ -38,29 +37,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
     before_run() {
         return [
             async ({ root }: { root: Module }) => {
-                Object.entries(builtin)
-                    .map(([key, value]) => {
-                        if (value.type == "function") {
-                            const inbuiltFunction = new FunctionDecNode(
-                                new IdentifierNode(key),
-                                undefined,
-                                new BlockNode([]),
-                                true,
-                                value.async
-                            );
-                            root.frame.define(key, inbuiltFunction);
-                        } else if (value.type == "variable") {
-                            const inbuiltVariable = new VariableNode(
-                                new IdentifierNode(key),
-                                true,
-                                false,
-                                undefined,
-                                create_object(value.value)
-                            );
-
-                            root.frame.define(key, inbuiltVariable);
-                        }
-                    })
+                add_builtins(builtin, { root });
             },
             async ({ current }: { current: Module }) => {
                 let module;
@@ -74,6 +51,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
                 } else {
                     module = new Module("std");
                 }
+
 
                 current.add_submodule(module);
 

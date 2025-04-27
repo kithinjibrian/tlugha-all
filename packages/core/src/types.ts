@@ -5,3 +5,7 @@ export * from './parser/parser'
 export * from './module/module'
 export * from "./objects/type"
 export * from './extension/extension'
+export * from './engine/cache'
+export * from './engine/engine'
+export * from "./builtin"
+export * from './exec'

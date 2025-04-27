@@ -1,4 +1,4 @@
-import { Module } from "@kithinji/tlugha-core";
+import { Module } from "../types";
 
 export class Cache {
     private static instance: Cache | null = null;

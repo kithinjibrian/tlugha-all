@@ -1,10 +1,11 @@
 import axios from "axios"
-import { Type, StringType } from "@kithinji/tlugha-core"
+import { Type, StringType, Frame, NumberType } from "./types"
 
 export type Builtin =
     {
         type: "function",
         async?: boolean,
+        has_callback?: boolean,
         signature: string,
         filter?: (args: Type<any>[]) => any,
         exec: (args: Type<any>[]) => any
@@ -24,7 +25,7 @@ export const builtin: Record<string, Builtin> = {
     __now__: {
         type: "function",
         signature: "<T, U>(args: T) -> U",
-        exec: (_: any[]) => {
+        exec: (args: any[]) => {
             return new Date();
         }
     },
@@ -33,7 +34,6 @@ export const builtin: Record<string, Builtin> = {
         signature: "<T, U>(args: T) -> U",
         filter: (args) => args.map(i => i),
         exec: (args: any[]) => {
-
             let formatted = args[0].value;
             const values = args[1];
 
@@ -44,6 +44,24 @@ export const builtin: Record<string, Builtin> = {
             });
 
             console.log(formatted);
+
+            return null;
+        }
+    },
+    __set_timeout__: {
+        type: "function",
+        signature: "<T, U>(args: T) -> U",
+        has_callback: true,
+        async: true,
+        exec: async (args: any[]) => {
+
+            const frame = new Frame();
+
+            await args[0].execute_function(
+                args[2],
+                [new NumberType(90)],
+                frame
+            )
 
             return null;
         }
