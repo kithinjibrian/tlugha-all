@@ -1,6 +1,6 @@
 {
     "name": "@kithinji/tlugha-node",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "main": "dist/main.js",
     "module": "dist/main.mjs",
     "types": "dist/main.d.ts",
@@ -13,7 +13,7 @@
         "typescript": "^5.3.3"
     },
     "dependencies": {
-        "@kithinji/tlugha-core": "^0.0.1",
+        "@kithinji/tlugha-core": "^0.0.2",
         "axios": "^1.8.4"
     }
 }
