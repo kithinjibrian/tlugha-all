@@ -92,7 +92,7 @@ export class FS {
     readFile(path: string): string {
         const node = this.findNode(path);
         if (!node || node.type !== "file") {
-            throw new Error("File not found");
+            throw new Error(`File not found '${path}'`);
         }
         return node.content || "";
     }

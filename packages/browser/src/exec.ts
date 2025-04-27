@@ -16,8 +16,8 @@ import {
     lugha
 } from "./types"
 import { FS } from "./fs/fs";
-import { write_std } from "./std/std";
 import { parse } from "./path/path"
+import "./std/std"
 
 class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";
@@ -93,9 +93,6 @@ export async function exec({
 }) {
     let module: Module = new Module("root");
     const fs = FS.getInstance();
-    fs.mkdir("/", "std");
-
-    write_std();
 
     let temp_filepath = null;
     if (code) {
@@ -108,19 +105,28 @@ export async function exec({
 
     const a = parse(filepath);
 
-    ExtensionStore.get_instance().register(new UploadBuiltins("/"))
+    ExtensionStore.get_instance().register(new UploadBuiltins("/app"))
 
     try {
         const engine = await lugha({
+            module,
             rd: a.dir,
             wd: a.dir,
-            module,
             file: a.base
         })
 
-        return await engine.call_main();
+        if (config &&
+            "call_main" in config &&
+            config.call_main
+        ) {
+            return await engine.call_main();
+        }
+        else
+            return null;
 
     } catch (error) {
         throw error;
+    } finally {
+        Cache.get_instance().clear_cache()
     }
 }

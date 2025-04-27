@@ -2,8 +2,21 @@ import { FS } from "../fs/fs";
 
 const fs = FS.getInstance();
 
-export const write_std = () => {
-    fs.writeFile("/std/__mod__.la",
+let std_init = false;
+
+(function () {
+    if (std_init) {
+        console.log("popl");
+        return;
+    }
+
+    const fs = FS.getInstance();
+    fs.mkdir("/", "app");
+    fs.mkdir("/app", "std");
+
+    std_init = true;
+
+    fs.writeFile("/app/std/__mod__.la",
         `
 import io;
 import math;
@@ -14,7 +27,7 @@ import result;
 `
     )
 
-    fs.writeFile("/std/io.la",
+    fs.writeFile("/app/std/io.la",
         `
 fun print<T>(format: string, ...rest: Array<T>): unit {
     builtin::__print__(format, rest);
@@ -30,7 +43,7 @@ fun write(file: string, data: string): unit {
 `
     )
 
-    fs.writeFile("/std/fetch.la",
+    fs.writeFile("/app/std/fetch.la",
         `
 fun get<T, C>(url: string, config: C): T {
   return builtin::__http_get__(url, config);
@@ -42,7 +55,7 @@ fun post<D, C, R>(url: string, data: D, config: C): R {
 `
     )
 
-    fs.writeFile("/std/math.la",
+    fs.writeFile("/app/std/math.la",
         `
 module consts {
     const PI = 3.141592653589793;
@@ -85,7 +98,7 @@ fun pow(a: number, b: number): number {
 `
     )
 
-    fs.writeFile("/std/option.la",
+    fs.writeFile("/app/std/option.la",
         `
 enum Option<V> {
     Some(V),
@@ -93,7 +106,7 @@ enum Option<V> {
 }
 `)
 
-    fs.writeFile("/std/result.la",
+    fs.writeFile("/app/std/result.la",
         `
 enum Result<T, E> {
     Ok(T),
@@ -101,10 +114,10 @@ enum Result<T, E> {
 }
 `)
 
-    fs.writeFile("/std/time.la",
+    fs.writeFile("/app/std/time.la",
         `
 fun now(): Date {
     return builtin::__now__();
 }
 `)
-}
+})()

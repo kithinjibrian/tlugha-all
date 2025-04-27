@@ -26,7 +26,7 @@ export * from "./types";
 //         await exec({
 //             code,
 //             config: {
-//                 std: "http://localhost:5173"
+//                 call_main: true
 //             }
 //         });
 
