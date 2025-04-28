@@ -1,6 +1,6 @@
 {
     "name": "@kithinji/tlugha-browser",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "type": "module",
     "main": "dist/main.cjs.js",
     "module": "dist/main.es.js",
@@ -26,7 +26,7 @@
         "vite": "^6.3.1"
     },
     "dependencies": {
-        "@kithinji/tlugha-core": "^0.0.6",
+        "@kithinji/tlugha-core": "^0.0.7",
         "axios": "^1.9.0"
     }
 }
