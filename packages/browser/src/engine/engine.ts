@@ -26,7 +26,7 @@ export class EngineBrowser extends Engine {
 
     async visitImport(
         node: ImportNode,
-        _?: Record<string, any>
+        args?: Record<string, any>
     ) {
         const fs = FS.getInstance();
 
@@ -56,7 +56,7 @@ export class EngineBrowser extends Engine {
             ? cache.get_mod(modPath)
             : new Module(name);
 
-        this.current.add_submodule(module);
+        args?.module.add_submodule(module);
 
         if (!cache.has_mod(modPath)) {
             cache.add_mod(modPath, module);

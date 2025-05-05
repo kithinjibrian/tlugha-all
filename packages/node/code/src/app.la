@@ -1,9 +1,18 @@
 use std::io::{ print };
-
-builtin::__set_timeout__(fun (a: number): unit -> {
-    print("{}", a + 90);
-});
+use std::http::{ Server, req_t, next_fn };
 
 fun main(): unit {
-    // print("{}", 907);
+    let app = Server::new();
+
+    app.get("/", fun (
+        req: req_t, 
+        res: res_t, 
+        next: next_fn
+    ): unit -> {
+        res.json({
+            name: "kithinji"
+        });
+    });
+
+    app.listen();
 }

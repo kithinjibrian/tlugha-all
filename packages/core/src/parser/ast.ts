@@ -1,4 +1,4 @@
-import { Frame } from "../types";
+import { Frame, Module } from "../types";
 
 export interface ASTVisitor {
     before_accept?(node: ASTNode, args?: Record<string, any>): any;
@@ -23,6 +23,7 @@ export interface ASTVisitor {
     visitContinue?(node: ASTNode, args?: Record<string, any>): any;
     visitVariableList?(node: VariableStatementNode, args?: Record<string, any>): any;
     visitVariable?(node: VariableNode, args?: Record<string, any>): any;
+    visitAlias?(node: AliasNode, args?: Record<string, any>): any;
     visitExpressionStatement?(node: ExpressionStatementNode, args?: Record<string, any>): any;
     visitAssignmentExpression?(node: BinaryOpNode, args?: Record<string, any>): any;
     visitTertiaryExpression?(node: ASTNode, args?: Record<string, any>): any;
@@ -169,6 +170,7 @@ export class ContinuationNode extends ASTNodeBase {
 export class FunctionDecNode extends ASTNodeBase {
     type = 'FunctionDec';
     public frame: Frame | null = null;
+    public module: Module | null = null;
 
     constructor(
         public identifier: IdentifierNode,
@@ -214,6 +216,7 @@ export class MemberDecNode extends FunctionDecNode {
 export class LambdaNode extends ASTNodeBase {
     type = 'Lambda';
     public frame: Frame | null = null;
+    public module: Module | null = null;
 
     constructor(
         public params: ParametersListNode | undefined,
@@ -281,6 +284,21 @@ export class VariableStatementNode extends ASTNodeBase {
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitVariableList?.(this, args);
+    }
+}
+
+export class AliasNode extends ASTNodeBase {
+    type = 'Alias';
+
+    constructor(
+        public identifier: IdentifierNode,
+        public data_type?: any,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitAlias?.(this, args);
     }
 }
 
@@ -683,8 +701,8 @@ export class StructNode extends ASTNodeBase {
         public name: string,
         public body: ASTNode[],
         public exported: boolean = false,
-        public type_parameters?: TypeParameterNode[]
-
+        public type_parameters?: TypeParameterNode[],
+        public module?: any
     ) {
         super();
     }

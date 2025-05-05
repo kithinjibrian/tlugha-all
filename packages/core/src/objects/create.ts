@@ -1,4 +1,4 @@
-import { NumberNode, StringNode } from "../types";
+import { LambdaNode, LambdaType, NumberNode, StringNode } from "../types";
 import { ArrayType } from "./array";
 import { Type } from "./base";
 import { BoolType } from "./bool";
@@ -21,6 +21,10 @@ export function create_node(value: Type<any>) {
 export function create_object(value: any): Type<any> {
     if (value === null) {
         throw new Error("Null values are not supported");
+    }
+
+    if (value instanceof LambdaNode) {
+        return new LambdaType(value);
     }
 
     if (typeof value == "number") {

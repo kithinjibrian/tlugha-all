@@ -131,6 +131,8 @@ function two_char(c1: string, c2: string) {
             switch (c2) {
                 case '=':
                     return TokenType.OrEquals;
+                case '|':
+                    return TokenType.Or;
             }
             break;
         case '%':
@@ -143,6 +145,8 @@ function two_char(c1: string, c2: string) {
             switch (c2) {
                 case '=':
                     return TokenType.AndEquals;
+                case '&':
+                    return TokenType.And
             }
             break;
         case '^':
@@ -314,6 +318,7 @@ export class Lexer {
             ["impl", TokenType.Impl],
             ["use", TokenType.Use],
             ["as", TokenType.As],
+            ["type", TokenType.Type],
         ]);
 
         return {

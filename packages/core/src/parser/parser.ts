@@ -47,6 +47,7 @@ import {
     WhileNode,
     MemberDecNode,
     LambdaNode,
+    AliasNode,
 } from "./ast";
 
 import { Token } from "../lexer/lexer";
@@ -184,6 +185,8 @@ ${message} at line ${token.line}, column ${token.column}
                 return this.import();
             case TokenType.Use:
                 return this.use();
+            case TokenType.Type:
+                return this.alias();
             case TokenType.Const:
             case TokenType.Let:
                 {
@@ -562,6 +565,26 @@ ${message} at line ${token.line}, column ${token.column}
         const name = this.previous().value;
 
         return new IdentifierNode(name);
+    }
+
+    private alias(): AliasNode {
+        if (!this.match(TokenType.Type)) {
+            this.error("Expected 'type' keyword name");
+        }
+
+        let identifier = this.identifier();
+
+        if (!this.match(TokenType.Equals)) {
+            this.error("Expected token '='");
+        }
+
+        let data_type = this.type();
+
+        if (!this.match(TokenType.SemiColon)) {
+            this.error("Expected ';'");
+        }
+
+        return new AliasNode(identifier, data_type);
     }
 
     /**

@@ -5,7 +5,7 @@ export abstract class Extension<TVisitor> {
     abstract before_accept(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<void>;
     abstract after_accept(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<void>;
     abstract handle_node(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<boolean | void>;
-    abstract before_run(): (({ root, current }: { root: Module, current: Module }) => Promise<void>)[];
+    abstract before_run(): (({ root }: { root: Module }) => Promise<void>)[];
     abstract after_main({ root }: { root: Module }): Promise<any>;
 }
 

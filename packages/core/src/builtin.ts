@@ -60,9 +60,10 @@ export const builtin: Record<string, Builtin> = {
             const frame = new Frame();
 
             await engine.execute_function(
-                args[1],
+                args[2],
                 [new NumberType(90)],
-                frame
+                frame,
+                args[1]
             )
 
             return null;

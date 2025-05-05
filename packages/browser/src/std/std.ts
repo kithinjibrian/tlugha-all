@@ -30,15 +30,15 @@ import result;
     fs.writeFile("/app/std/io.la",
         `
 fun print<T>(format: string, ...rest: Array<T>): unit {
-    builtin::__print__(format, rest);
+    root::builtin::__print__(format, rest);
 }
 
 fun read(file: string, encoding: string): string {
-    return builtin::__read__(file, encoding);
+    return root::builtin::__read__(file, encoding);
 }
 
 fun write(file: string, data: string): unit {
-    builtin::__write__(file, data);
+    root::builtin::__write__(file, data);
 }
 `
     )
@@ -46,11 +46,11 @@ fun write(file: string, data: string): unit {
     fs.writeFile("/app/std/fetch.la",
         `
 fun get<T, C>(url: string, config: C): T {
-  return builtin::__http_get__(url, config);
+  return root::builtin::__http_get__(url, config);
 }
 
 fun post<D, C, R>(url: string, data: D, config: C): R {
-    return builtin::__http_post__(url, data, config);
+    return root::builtin::__http_post__(url, data, config);
 }
 `
     )
@@ -117,7 +117,7 @@ enum Result<T, E> {
     fs.writeFile("/app/std/time.la",
         `
 fun now(): Date {
-    return builtin::__now__();
+    return root::builtin::__now__();
 }
 `)
 })()

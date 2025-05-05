@@ -13,6 +13,8 @@ export interface Operations<T> {
     gt?: (obj: Type<T>) => Type<boolean>;
     eq?: (obj: Type<T>) => Type<boolean>;
     neq?: (obj: Type<T>) => Type<boolean>;
+    or?: (obj: Type<boolean>) => Type<boolean>;
+    and?: (obj: Type<boolean>) => Type<boolean>;
     get?: (obj: Type<any>, args: Type<any>[]) => any;
     set?: (index: Type<any>, new_value: Type<any>) => void;
 }
@@ -141,4 +143,17 @@ export abstract class Type<T> {
         throw new Error(`Operation 'dec' not supported for type ${this.type}`);
     }
 
+    and(obj: Type<boolean>): Type<boolean> {
+        if (this.operations.and) {
+            return this.operations.and(obj);
+        }
+        throw new Error(`Operation 'and' not supported for type ${this.type}`);
+    }
+
+    or(obj: Type<boolean>): Type<boolean> {
+        if (this.operations.or) {
+            return this.operations.or(obj);
+        }
+        throw new Error(`Operation 'or' not supported for type ${this.type}`);
+    }
 }

@@ -44,9 +44,10 @@ export class Module {
     public frame: Frame;
 
     constructor(
-        public name: string
+        public name: string,
+        parent_frame: Frame | null = null
     ) {
-        this.frame = new Frame(null, `${this.name}_frame`);
+        this.frame = new Frame(parent_frame, `${this.name}_frame`);
     }
 
     add_submodule(child: Module): void {

@@ -1,0 +1,99 @@
+type next_fn = () -> unit;
+
+struct Req {
+    query: Map<string, string>;
+}
+
+struct Res {
+    status: number;
+    mut data: string;
+
+    fun new(): Res {
+        return Res {
+            status: 200,
+            data: ""
+        };
+    }
+
+    fun send(self: Self, str: string): unit {
+        self.data = str;
+    }
+
+    fun json<T>(self: Self, data: T): unit {
+        self.data = data;
+    }
+}
+
+type req_t = Req;
+
+struct Handler {
+    method: string;
+    path: string;
+    handlers: Array<Function>;
+}
+
+struct Server {
+    routes: Array<Handler>;
+
+    fun new(): Server {
+        return Server {
+            routes: []
+        };
+    }
+
+    fun add_route(
+        self: Self,
+        method: string,
+        path: string,
+        handlers: Function
+    ): unit {
+        let h = Handler {
+            method: method,
+            path: path,
+            handlers: handlers
+        };
+
+        self.routes.push(h);
+    }
+
+    fun get(self: Self, path: string, ...handlers: Array<Function>): unit {
+        self.add_route("GET", path, handlers);
+    }
+
+    fun handle_req(self: Self, req: Req, res: Res): unit {
+        let mut a = 0;
+
+        while(a < self.routes.length()) {
+            if(self.routes[a].method == req.method &&
+                self.routes[a].path == req.path
+            ) {                
+                let mut i = 0;
+                
+                const next = fun (): unit -> {
+                    let handler = self.routes[a].handlers[i];
+                    
+                    i += 1;
+
+                    if (handler) {
+                        handler(req, res, next);
+                    }
+                };
+
+                next();
+            }
+
+            a += 1;
+        }
+    }
+
+    fun listen(self: Self): unit {
+        let res = Res::new();
+
+        self.handle_req({
+            method: "GET",
+            path: "/"
+        }, res);
+
+        super::io::print("{}", res);
+    }
+}

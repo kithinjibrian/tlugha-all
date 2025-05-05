@@ -44,7 +44,10 @@ export class EngineNode extends Engine {
         return null;
     }
 
-    async visitImport(node: ImportNode, args?: Record<string, any>) {
+    async visitImport(
+        node: ImportNode,
+        args?: Record<string, any>
+    ) {
         const originalWd = this.wd;
         const name = node.identifier.name;
 
@@ -80,7 +83,7 @@ export class EngineNode extends Engine {
             ? cache.get_mod(modPath)
             : new Module(name);
 
-        this.current.add_submodule(module);
+        args?.module.add_submodule(module);
 
         if (!cache.has_mod(modPath)) {
             cache.add_mod(modPath, module);

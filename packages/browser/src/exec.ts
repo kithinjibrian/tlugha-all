@@ -41,7 +41,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
             async ({ root, }: { root: Module }) => {
                 add_builtins(builtin, { root });
             },
-            async ({ current }: { current: Module }) => {
+            async ({ root }: { root: Module }) => {
                 if (!this.std) return;
 
                 let module;
@@ -56,7 +56,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
                     module = new Module("std");
                 }
 
-                current.add_submodule(module);
+                root.add_submodule(module);
 
                 if (!cache.has_mod(mod_path)) {
                     cache.add_mod(mod_path, module);

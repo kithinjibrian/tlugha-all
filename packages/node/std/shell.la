@@ -1,3 +1,3 @@
 fun run(command: string): string {
-    builtin::__shell__(command);
+    return root::builtin::__shell__(command);
 }

@@ -83,4 +83,5 @@ export enum TokenType {
     Mut = 'Mut',
     Impl = 'Impl',
     As = 'As',
+    Type = 'Type',
 }

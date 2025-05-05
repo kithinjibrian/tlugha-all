@@ -1,7 +1,7 @@
 fun get<T, C>(url: string, config: C): T {
-  return builtin::__http_get__(url, config);
+  return root::builtin::__http_get__(url, config);
 }
 
 fun post<D, C, R>(url: string, data: D, config: C): R {
-    return builtin::__http_post__(url, data, config);
+    return root::builtin::__http_post__(url, data, config);
 }

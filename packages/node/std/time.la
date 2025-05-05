@@ -1,3 +1,3 @@
 fun now(): Date {
-    return builtin::__now__();
+    return root::builtin::__now__();
 }
