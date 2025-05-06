@@ -5,6 +5,7 @@ import {
     FunctionDecNode,
     IdentifierNode,
     Module,
+    Token,
     VariableNode
 } from "./types";
 
@@ -27,16 +28,18 @@ export const add_builtins = async (builtin: Record<string, Builtin>, { root, }: 
         .map(([key, value]) => {
             if (value.type == "function") {
                 const inbuiltFunction = new FunctionDecNode(
-                    new IdentifierNode(key),
+                    null,
+                    new IdentifierNode(null, key),
                     undefined,
-                    new BlockNode([]),
+                    new BlockNode(null, []),
                     true,
                     value.async
                 );
                 module.frame.define(key, inbuiltFunction);
             } else if (value.type == "variable") {
                 const inbuiltVariable = new VariableNode(
-                    new IdentifierNode(key),
+                    null,
+                    new IdentifierNode(null, key),
                     true,
                     false,
                     undefined,

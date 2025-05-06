@@ -7,17 +7,19 @@ import {
     NumberNode,
     ReturnNode,
     StringNode,
+    Token,
 } from "../types";
 import { Type } from "./base";
 import { FunctionType } from "./function";
 
 let m: Record<string, any> = {
     length(value: string) {
-        return new NumberNode(value.length);
+        return new NumberNode(null, value.length);
     },
     split(value: string, args: string[]) {
         return new ArrayNode(
-            value.split(args[0]).map((ch) => new StringNode(ch))
+            null,
+            value.split(args[0]).map((ch) => new StringNode(null, ch))
         )
     }
 }
@@ -34,10 +36,12 @@ export class StringType extends Type<string> {
                 if (obj.type == "string") {
                     return new FunctionType(
                         new FunctionDecNode(
-                            new IdentifierNode(index),
+                            null,
+                            new IdentifierNode(null, index),
                             undefined,
-                            new BlockNode([
+                            new BlockNode(null, [
                                 new ReturnNode(
+                                    null,
                                     m[index](value, args.map((val) => val.getValue()))
                                 )
                             ])

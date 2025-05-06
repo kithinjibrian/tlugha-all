@@ -1,3 +1,4 @@
+import { ErrorCodes, TError } from "../error/error";
 import {
     ArrayNode,
     ASTNode,
@@ -68,6 +69,39 @@ export class Engine implements ASTVisitor {
         public root: Module,
         public lugha: Function
     ) { }
+
+    private error(
+        ast: ASTNode | null,
+        code: string,
+        reason: string,
+        hint?: string,
+        context?: string,
+        expected?: string[],
+        example?: string
+    ): never {
+        let token = {
+            line: 1,
+            column: 1,
+            line_str: ""
+        };
+
+        if (ast && ast.token) {
+            token = ast.token;
+        }
+
+        throw new TError({
+            code,
+            reason,
+            line: token.line,
+            column: token.column,
+            lineStr: token.line_str,
+            stage: 'runtime',
+            hint,
+            context,
+            expected,
+            example
+        });
+    }
 
     public async before_accept(
         node: ASTNode,
@@ -143,6 +177,7 @@ export class Engine implements ASTVisitor {
 
                 new_frame.define(
                     _param.identifier.name, new ParameterNode(
+                        _param.token,
                         _param.identifier,
                         _param.variadic,
                         _param.data_type,
@@ -157,7 +192,15 @@ export class Engine implements ASTVisitor {
             const inbuilt = builtin[name];
 
             if (inbuilt.type != "function") {
-                throw new Error(`Object ${name} not callable`);
+                this.error(
+                    fn,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    `Object '${name}' is not callable.`,
+                    "You attempted to call something that is not a function or callable object.",
+                    `The object '${name}' was used with '()' but does not support being invoked.`,
+                    ["function", "callable object"],
+                    `Example: let f = () -> {}; f();`
+                );
             }
 
             const filtered = inbuilt.filter
@@ -221,9 +264,9 @@ export class Engine implements ASTVisitor {
             let after = [];
 
             for (const ext of this.extension.get_extensions()) {
-                let val = await ext?.after_main({
+                let val = await ext?.after_main?.({
                     root: this.root
-                })
+                });
 
                 if (val) after.push(val);
             }
@@ -236,7 +279,15 @@ export class Engine implements ASTVisitor {
             return null;
         }
 
-        throw new Error("Main function not found!");
+        this.error(
+            null,
+            ErrorCodes.runtime.MISSING_MAIN,
+            "Main function not found.",
+            "Program execution requires a 'main' function as the entry point.",
+            "No symbol named 'main' was found in the root frame.",
+            ["main function"],
+            "Example: fun main() { print('Hello'); }"
+        );
     }
 
     async visitProgram(node: ProgramNode, args?: Record<string, any>) {
@@ -282,11 +333,33 @@ export class Engine implements ASTVisitor {
         const self = this;
         function resolveModule(path: string[]): Module | undefined {
             let mod = self.root.children.find(m => m.name === path[0]);
-            if (!mod) throw new Error(`Undefined module: '${path[0]}'`);
+            if (!mod) {
+                self.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Module '${path[0]}' is not defined.`,
+                    "Tried to access a module that doesn't exist in the root scope.",
+                    `No top-level module named '${path[0]}' was found.`,
+                    ["defined module"]
+                );
+
+                throw new Error("");
+            }
 
             for (let i = 1; i < path.length; i++) {
                 mod = mod.children.find(m => m.name === path[i]);
-                if (!mod) throw new Error(`Undefined module at '${path.slice(0, i + 1).join(".")}'`);
+                if (!mod) {
+                    self.error(
+                        node,
+                        ErrorCodes.runtime.UNDEFINED_MODULE,
+                        `Module path '${path.slice(0, i + 1).join("::")}' is not defined.`,
+                        "Nested module does not exist in the specified path.",
+                        `Failed at '${path[i]}' in path '${path.join("::")}'.`,
+                        ["existing module path"]
+                    );
+
+                    throw new Error("");
+                }
             }
             return mod;
         }
@@ -378,41 +451,77 @@ export class Engine implements ASTVisitor {
 
     async visitCallExpression(
         node: CallExpressionNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { frame, module }: { frame: Frame; module: Module }
     ) {
         const evaluatedArgs: Type<any>[] = [];
+
         for (const arg of node.args) {
             await this.visit(arg, { frame, module });
             const argValue = frame.stack.pop();
-            if (!argValue) throw new Error("Stack underflow - argument evaluation");
+            if (!argValue) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.STACK_UNDERFLOW,
+                    "Stack underflow during argument evaluation.",
+                    "An argument was evaluated, but no result was pushed onto the stack.",
+                    "Stack did not contain expected value after evaluating an argument.",
+                    ["evaluated value"],
+                    "Example: print('{}', 1 + 2)"
+                );
+            }
             evaluatedArgs.push(argValue);
         }
-
-        //  console.log(node.callee, frame.parent?.parent);
 
         if (node.callee instanceof ScopedIdentifierNode) {
             await this.visit(node.callee, { frame, module });
             const nd = frame.stack.pop();
 
             if (!nd) {
-                throw new Error(`Function ${node.callee.name[0]} is not defined`);
+                this.error(
+                    node.callee,
+                    ErrorCodes.runtime.UNDEFINED_FUNCTION,
+                    `Function '${node.callee.name.join('.')}' is not defined.`,
+                    "The function you're trying to call has not been declared or imported.",
+                    `Function '${node.callee.name.join('.')}' not found in scope.`,
+                    ["defined function", "imported symbol"],
+                    `Example: fun greet() { ... } \ngreet();`
+                );
             }
 
-            if (
-                nd instanceof FunctionType ||
-                nd instanceof LambdaType
-            ) {
+            if (nd instanceof FunctionType || nd instanceof LambdaType) {
                 await this.execute_function(nd.getValue(), evaluatedArgs, frame, module);
             } else if (nd instanceof TupleVariantNode) {
-                frame.stack.push(new TupleType(evaluatedArgs))
+                frame.stack.push(new TupleType(evaluatedArgs));
+            } else {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    `Object '${node.callee.name.join('.')}' is not callable.`,
+                    "You tried to call a value that isn't a function or lambda.",
+                    "The symbol exists but cannot be invoked with '()'.",
+                    ["function", "lambda"],
+                    "Example: let f = (): number -> 1; f();"
+                );
             }
+
         } else {
             await this.visit(node.callee, { frame, module, args: evaluatedArgs });
-            const fn = frame.stack.pop() as FunctionType;
+            const fn = frame.stack.pop();
+
+            if (!(fn instanceof FunctionType || fn instanceof LambdaType)) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    "Attempted to call a non-function value.",
+                    "Only functions or lambda expressions can be called with '()'.",
+                    `Type '${fn?.constructor?.name ?? "unknown"}' is not callable.`,
+                    ["function", "lambda"],
+                    "Example: fun (x): number -> x * 2"
+                );
+            }
 
             await this.execute_function(fn.getValue(), evaluatedArgs, frame, module);
         }
-
     }
 
     async get_object(
@@ -445,7 +554,15 @@ export class Engine implements ASTVisitor {
 
         const value = object.get(property, args);
         if (!value) {
-            throw new Error("Property not found");
+            this.error(
+                node,
+                ErrorCodes.runtime.UNDEFINED_PROPERTY,
+                `Property '${property}' not found on object.`,
+                "You're trying to access a property or method that doesn't exist on this object.",
+                `The property '${property}' is not defined on the target object.`,
+                ["valid property", "defined method"],
+                `obj.prop or obj.method()`
+            );
         }
 
         frame.stack.push(value);
@@ -506,53 +623,96 @@ export class Engine implements ASTVisitor {
 
             const value = object.get(property, []);
             if (!value) {
-                throw new Error("Property not found");
+                this.error(
+                    node.left,
+                    ErrorCodes.runtime.UNDEFINED_PROPERTY,
+                    `Property '${property}' not found on object.`,
+                    "Cannot assign to an undefined property.",
+                    `Object has no property named '${property}'.`,
+                    ["defined property"],
+                    "obj.field = 42"
+                );
             }
 
-            left = {
-                value
-            };
-
+            left = { value };
         } else {
             left = this.getScopedSymbol(node.left as ScopedIdentifierNode, { frame, module });
-            if (!left) throw new Error("Stack underflow - left operand");
+            if (!left) {
+                this.error(
+                    node.left,
+                    ErrorCodes.runtime.UNDEFINED_VARIABLE,
+                    "Cannot assign to undefined variable.",
+                    "The left-hand side of the assignment is not a declared variable.",
+                    `Variable '${(node.left as ScopedIdentifierNode).name.join('.')}' not found.`,
+                    ["declared variable"],
+                    "valid: let x = 1; x = 2; invalid: let x = 1; y = 2; y is an undefined variable."
+                );
+            }
         }
 
-
-        await this.visit(node.right, { frame, module })
+        await this.visit(node.right, { frame, module });
         const right = frame.stack.pop();
-        if (!right) throw new Error("Stack underflow - right operand");
+        if (!right) {
+            this.error(
+                node.right,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow during assignment.",
+                "The right-hand side of the assignment did not produce a value.",
+                "Missing value for assignment.",
+                ["evaluated expression"],
+                "valid: x = 1 + 2"
+            );
+        }
 
         let result: Type<any>;
-
-        switch (node.operator) {
-            case "+=":
-                result = left.value.add(right);
-                break;
-            case "-=":
-                result = left.value.minus(right);
-                break;
-            case "*=":
-                result = left.value.multiply(right);
-                break;
-            case "/=":
-                result = left.value.divide(right);
-                break;
-            case "%=":
-                result = left.value.modulo(right);
-                break;
-            case "=":
-                result = right;
-                break;
-            default:
-                throw new Error(`Unsupported operator: ${node.operator}`);
+        try {
+            switch (node.operator) {
+                case "+=":
+                    result = left.value.add(right);
+                    break;
+                case "-=":
+                    result = left.value.minus(right);
+                    break;
+                case "*=":
+                    result = left.value.multiply(right);
+                    break;
+                case "/=":
+                    result = left.value.divide(right);
+                    break;
+                case "%=":
+                    result = left.value.modulo(right);
+                    break;
+                case "=":
+                    result = right;
+                    break;
+                default:
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                        `Unsupported operator '${node.operator}' in assignment.`,
+                        "This assignment operator is not recognized or allowed.",
+                        `Operator '${node.operator}' is invalid in this context.`,
+                        ["=", "+=", "-=", "*=", "/=", "%="],
+                        "x += 1"
+                    );
+            }
+        } catch (e: any) {
+            this.error(
+                node,
+                ErrorCodes.runtime.OPERATION_FAILED,
+                `Operation failed during '${node.operator}' assignment.`,
+                e.message,
+                "A runtime error occurred while computing the new value.",
+                ["valid operands"],
+                "x += 1"
+            );
         }
 
         if (object && property) {
-            object.set(property, result)
-        }
-        else
+            object.set(property, result);
+        } else {
             left.value = result;
+        }
 
         frame.stack.push(result);
     }
@@ -561,13 +721,33 @@ export class Engine implements ASTVisitor {
         node: BinaryOpNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        await this.visit(node.left, { frame, module })
+        await this.visit(node.left, { frame, module });
         const left = frame.stack.pop();
-        if (!left) throw new Error("Stack underflow - left operand");
+        if (!left) {
+            this.error(
+                node.left,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow while evaluating left operand.",
+                "The left-hand side expression did not leave a value on the stack.",
+                "Likely due to a missing or failed evaluation of the left operand.",
+                ["evaluated expression"],
+                "x + 5"
+            );
+        }
 
-        await this.visit(node.right, { frame, module })
+        await this.visit(node.right, { frame, module });
         const right = frame.stack.pop();
-        if (!right) throw new Error("Stack underflow - right operand");
+        if (!right) {
+            this.error(
+                node.right,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow while evaluating right operand.",
+                "The right-hand side expression did not leave a value on the stack.",
+                "Likely due to a missing or failed evaluation of the right operand.",
+                ["evaluated expression"],
+                "x + 5"
+            );
+        }
 
         let result: Type<any>;
         switch (node.operator) {
@@ -605,7 +785,15 @@ export class Engine implements ASTVisitor {
                 result = left.or(right);
                 break;
             default:
-                throw new Error(`Unsupported operator: ${node.operator}`);
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                    `Unsupported operator '${node.operator}' in assignment.`,
+                    "This assignment operator is not recognized or allowed.",
+                    `Operator '${node.operator}' is invalid in this context.`,
+                    ["+", "-", "*", "/", "%", "<", ">", "==", "!=", "&&", "||"],
+                    "let a = x + 1;"
+                );
         }
 
         frame.stack.push(result);
@@ -613,49 +801,96 @@ export class Engine implements ASTVisitor {
 
     getScopedSymbol(
         node: ScopedIdentifierNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { frame, module }: { frame: Frame; module: Module }
     ) {
-        let __p = (search_frame: Frame, name: string) => {
+        const __p = (search_frame: Frame, name: string) => {
             const symbol = search_frame.get(name);
 
             if (!symbol) {
-                throw new Error(`Symbol '${name}' is not defined`);
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_SYMBOL,
+                    `Symbol '${name}' is not defined.`,
+                    "You may have a typo or used a symbol before declaring it.",
+                    `Symbol '${name}' was not found in the current scope.`,
+                    ["defined variable or function"],
+                    `Valid: let ${name} = 42; let a = ${name} + 10; invalid: let sum = w + 10; Symbol 'w' is not defined.`
+                );
             }
 
             return symbol;
-        }
+        };
 
         let current: Module | undefined;
-        if (node.name.length == 1) {
+
+        if (node.name.length === 1) {
             return __p(frame, node.name[0]);
-        } else if (node.name[0] == "root") {
+        }
+
+        const rootToken = node.name[0];
+        if (rootToken === "root") {
             current = this.root;
-        } else if (node.name[0] === "self") {
-            current = module; // Current module
-        } else if (node.name[0] === "super") {
+        } else if (rootToken === "self") {
+            current = module;
+        } else if (rootToken === "super") {
             if (!module.parent) {
-                throw new Error("Super on module root")
+                this.error(
+                    node,
+                    ErrorCodes.runtime.INVALID_SUPER_REFERENCE,
+                    "Cannot use 'super' at the root module.",
+                    "'super' refers to a parent module, which doesn't exist at the root level.",
+                    "Tried to access parent of the root module.",
+                    ["self", "root", "or specific module name"],
+                    "'use super.graphics;' in a submodule"
+                );
             }
-            current = module.parent; // Parent module
+            current = module.parent;
         } else {
-            current = module.children.find(m => m.name === node.name[0]);
+            current = module.children.find(m => m.name === rootToken);
             if (!current) {
-                throw new Error(`Undefined module: '${node.name[0]}'`);
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Undefined module: '${rootToken}'`,
+                    `The module '${rootToken}' does not exist.`,
+                    `Available modules: ${module.children.map(m => `'${m.name}'`).join(", ") || "none"}`,
+                    ["existing module name"],
+                    "use graphics::shapes::Circle;"
+                );
             }
         }
 
         for (let i = 1; i < node.name.length - 1; i++) {
+            const next = node.name[i];
             if (current) {
-                current = current.children.find(m => m.name === node.name[i]);
-            } else {
-                throw new Error(`Undefined module: '${node.name[1]}'`);
+                current = current.children.find(m => m.name === next);
+            }
+
+            if (!current) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Undefined submodule: '${next}'`,
+                    `The submodule '${next}' does not exist in '${node.name[i - 1]}'.`,
+                    "Tried to traverse a non-existent submodule path.",
+                    ["existing submodule"],
+                    "use graphics::shapes::Circle;"
+                );
             }
         }
 
-        if (current?.frame)
-            return __p(current.frame, node.name[node.name.length - 1])
+        if (current?.frame) {
+            return __p(current.frame, node.name[node.name.length - 1]);
+        }
 
-        return null;
+        this.error(
+            node,
+            ErrorCodes.runtime.UNDEFINED_SYMBOL,
+            `Symbol '${node.name[node.name.length - 1]}' is not defined in the target module.`,
+            "The symbol you tried to access does not exist or is not visible in this module.",
+            "Final symbol lookup failed.",
+            ["existing symbol"]
+        );
     }
 
     async visitScopedIdentifier(
@@ -663,8 +898,6 @@ export class Engine implements ASTVisitor {
         { frame, module }: { frame: Frame, module: Module }
     ) {
         const symbol = this.getScopedSymbol(node, { frame, module });
-
-        if (!symbol) throw new Error(`Symbol '${node.name.join("::")}' not found`)
 
         if (symbol instanceof VariableNode ||
             symbol instanceof ParameterNode
@@ -812,6 +1045,7 @@ export class Engine implements ASTVisitor {
         { frame, module }: { frame: Frame, module: Module }
     ) {
         await this.visit(node.name, { frame, module });
+
         const struct = frame.stack.pop() as StructNode;
 
         const providedFields: Record<string, any> = {};
@@ -828,7 +1062,15 @@ export class Engine implements ASTVisitor {
                 const fieldName = member.field.name;
 
                 if (!(fieldName in providedFields)) {
-                    throw new Error(`Missing field '${fieldName}' in struct initialization`);
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.MISSING_STRUCT_FIELD,
+                        `Missing field '${fieldName}' in struct initialization.`,
+                        "All required fields of a struct must be provided during initialization.",
+                        `The field '${fieldName}' is declared in the struct but wasn't provided.`,
+                        [`field '${fieldName}'`],
+                        `${struct.name} { ${fieldName}: value }`
+                    );
                 }
 
                 instance[fieldName] = providedFields[fieldName];

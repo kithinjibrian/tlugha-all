@@ -1,4 +1,4 @@
-import { Frame, Module } from "../types";
+import { Frame, Module, Token } from "../types";
 
 export interface ASTVisitor {
     before_accept?(node: ASTNode, args?: Record<string, any>): any;
@@ -67,11 +67,13 @@ export interface ASTVisitor {
 
 export interface ASTNode {
     type: string;
+    token: Token | null;
     accept(visitor: ASTVisitor, args?: Record<string, any>): any;
 }
 
 export abstract class ASTNodeBase implements ASTNode {
     abstract type: string;
+    abstract token: Token | null;
 
     async accept(visitor: ASTVisitor, args?: Record<string, any>) {
         await visitor.before_accept?.(this, args);
@@ -87,7 +89,10 @@ export abstract class ASTNodeBase implements ASTNode {
 export class ProgramNode extends ASTNodeBase {
     type = 'ProgramNode';
 
-    constructor(public program: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public program: ASTNode
+    ) {
         super();
     }
 
@@ -99,7 +104,10 @@ export class ProgramNode extends ASTNodeBase {
 export class SourceElementsNode extends ASTNodeBase {
     type = 'SourceElements';
 
-    constructor(public sources: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public sources: ASTNode[]
+    ) {
         super();
     }
 
@@ -112,6 +120,7 @@ export class BlockNode extends ASTNodeBase {
     type = 'Block';
 
     constructor(
+        public token: Token | null,
         public body: ASTNode[],
         public name: string = ""
     ) {
@@ -126,7 +135,11 @@ export class BlockNode extends ASTNodeBase {
 export class WhileNode extends ASTNodeBase {
     type = 'While';
 
-    constructor(public expression: ASTNode, public body: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public expression: ASTNode,
+        public body: ASTNode
+    ) {
         super();
     }
 
@@ -139,6 +152,7 @@ export class ForNode extends ASTNodeBase {
     type = 'For';
 
     constructor(
+        public token: Token | null,
         public init: ASTNode | undefined,
         public condition: ASTNode | undefined,
         public update: ASTNode | undefined,
@@ -156,6 +170,7 @@ export class ContinuationNode extends ASTNodeBase {
     type = "Continuation";
 
     constructor(
+        public token: Token | null,
         public params: any[],
         public body: ASTNode
     ) {
@@ -173,6 +188,7 @@ export class FunctionDecNode extends ASTNodeBase {
     public module: Module | null = null;
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode,
         public params: ParametersListNode | undefined,
         public body: BlockNode,
@@ -194,9 +210,11 @@ export class MemberDecNode extends FunctionDecNode {
     type = 'MemberDec';
 
     constructor(
+        public token: Token | null,
         fun: FunctionDecNode,
     ) {
         super(
+            token,
             fun.identifier,
             fun.params,
             fun.body,
@@ -219,6 +237,7 @@ export class LambdaNode extends ASTNodeBase {
     public module: Module | null = null;
 
     constructor(
+        public token: Token | null,
         public params: ParametersListNode | undefined,
         public body: ASTNode,
         public is_async: boolean = false,
@@ -236,7 +255,10 @@ export class LambdaNode extends ASTNodeBase {
 export class ParametersListNode extends ASTNodeBase {
     type = 'ParametersList';
 
-    constructor(public parameters: ParameterNode[]) {
+    constructor(
+        public token: Token | null,
+        public parameters: ParameterNode[]
+    ) {
         super();
     }
 
@@ -249,6 +271,7 @@ export class ParameterNode extends ASTNodeBase {
     type = 'Parameter';
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode,
         public variadic: boolean,
         public data_type: ASTNode,
@@ -266,7 +289,10 @@ export class ParameterNode extends ASTNodeBase {
 export class ReturnNode extends ASTNodeBase {
     type = 'return await ';
 
-    constructor(public expression?: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public expression?: ASTNode
+    ) {
         super();
     }
 
@@ -278,7 +304,10 @@ export class ReturnNode extends ASTNodeBase {
 export class VariableStatementNode extends ASTNodeBase {
     type = 'Let';
 
-    constructor(public variables: VariableNode) {
+    constructor(
+        public token: Token | null,
+        public variables: VariableNode
+    ) {
         super();
     }
 
@@ -291,6 +320,7 @@ export class AliasNode extends ASTNodeBase {
     type = 'Alias';
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode,
         public data_type?: any,
     ) {
@@ -306,6 +336,7 @@ export class VariableNode extends ASTNodeBase {
     type = 'Variable';
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode,
         public constant: boolean,
         public mutable: boolean,
@@ -324,7 +355,10 @@ export class VariableNode extends ASTNodeBase {
 export class ExpressionStatementNode extends ASTNodeBase {
     type = 'ExpressionStatement';
 
-    constructor(public expression: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public expression: ASTNode
+    ) {
         super();
     }
 
@@ -336,7 +370,10 @@ export class ExpressionStatementNode extends ASTNodeBase {
 export class ExpressionNode extends ASTNodeBase {
     type = 'Expression';
 
-    constructor(public expressions: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public expressions: ASTNode[]
+    ) {
         super();
     }
 
@@ -348,7 +385,10 @@ export class ExpressionNode extends ASTNodeBase {
 export class NumberNode extends ASTNodeBase {
     type = 'Number';
 
-    constructor(public value: number) {
+    constructor(
+        public token: Token | null,
+        public value: number
+    ) {
         super();
     }
 
@@ -360,7 +400,10 @@ export class NumberNode extends ASTNodeBase {
 export class BooleanNode extends ASTNodeBase {
     type = 'Boolean';
 
-    constructor(public value: boolean) {
+    constructor(
+        public token: Token | null,
+        public value: boolean
+    ) {
         super();
     }
 
@@ -372,7 +415,10 @@ export class BooleanNode extends ASTNodeBase {
 export class StringNode extends ASTNodeBase {
     type = 'String';
 
-    constructor(public value: string) {
+    constructor(
+        public token: Token | null,
+        public value: string
+    ) {
         super();
     }
 
@@ -384,7 +430,10 @@ export class StringNode extends ASTNodeBase {
 export class NullNode extends ASTNodeBase {
     type = 'Null';
 
-    constructor(public value: string = "null") {
+    constructor(
+        public token: Token | null,
+        public value: string = "null"
+    ) {
         super();
     }
 
@@ -396,7 +445,10 @@ export class NullNode extends ASTNodeBase {
 export class ArrayNode extends ASTNodeBase {
     type = 'Array';
 
-    constructor(public elements: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public elements: ASTNode[]
+    ) {
         super();
     }
 
@@ -408,7 +460,10 @@ export class ArrayNode extends ASTNodeBase {
 export class MapNode extends ASTNodeBase {
     type = 'Map';
 
-    constructor(public properties: PropertyNode[]) {
+    constructor(
+        public token: Token | null,
+        public properties: PropertyNode[]
+    ) {
         super();
     }
 
@@ -420,7 +475,10 @@ export class MapNode extends ASTNodeBase {
 export class SetNode extends ASTNodeBase {
     type = 'Set';
 
-    constructor(public values: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public values: ASTNode[]
+    ) {
         super();
     }
 
@@ -432,7 +490,10 @@ export class SetNode extends ASTNodeBase {
 export class TupleNode extends ASTNodeBase {
     type = 'Tuple';
 
-    constructor(public values: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public values: ASTNode[]
+    ) {
         super();
     }
 
@@ -445,6 +506,7 @@ export class StructInitNode extends ASTNodeBase {
     type = 'StructInit';
 
     constructor(
+        public token: Token | null,
         public name: ASTNode,
         public fields: StructFieldNode[],
     ) {
@@ -460,6 +522,7 @@ export class StructFieldNode extends ASTNodeBase {
     type = 'StructField';
 
     constructor(
+        public token: Token | null,
         public iden: IdentifierNode,
         public expression?: ASTNode,
     ) {
@@ -474,7 +537,11 @@ export class StructFieldNode extends ASTNodeBase {
 export class PropertyNode extends ASTNodeBase {
     type = 'Property';
 
-    constructor(public key: string, public value: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public key: string,
+        public value: ASTNode
+    ) {
         super();
     }
 
@@ -487,6 +554,7 @@ export class AssignmentExpressionNode extends ASTNodeBase {
     type = 'AssignmentExpression';
 
     constructor(
+        public token: Token | null,
         public operator: string,
         public left: ASTNode,
         public right: ASTNode
@@ -503,6 +571,7 @@ export class BinaryOpNode extends ASTNodeBase {
     type = 'BinaryExpression';
 
     constructor(
+        public token: Token | null,
         public operator: string,
         public left: ASTNode,
         public right: ASTNode
@@ -519,6 +588,7 @@ export class TertiaryExpressionNode extends ASTNodeBase {
     type = 'TertiaryExpression';
 
     constructor(
+        public token: Token | null,
         public condition: ASTNode,
         public consequent: ASTNode,
         public alternate: ASTNode
@@ -535,6 +605,7 @@ export class IfElseNode extends ASTNodeBase {
     type = 'IfElse';
 
     constructor(
+        public token: Token | null,
         public condition: ASTNode,
         public consequent: ASTNode,
         public alternate?: ASTNode
@@ -550,7 +621,11 @@ export class IfElseNode extends ASTNodeBase {
 export class UnaryOpNode extends ASTNodeBase {
     type = 'UnaryOp';
 
-    constructor(public operator: string, public operand: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public operator: string,
+        public operand: ASTNode
+    ) {
         super();
     }
 
@@ -563,6 +638,7 @@ export class MemberExpressionNode extends ASTNodeBase {
     type = 'MemberExpression';
 
     constructor(
+        public token: Token | null,
         public object: ASTNode,
         public property: ASTNode,
         public computed: boolean
@@ -578,7 +654,11 @@ export class MemberExpressionNode extends ASTNodeBase {
 export class CallExpressionNode extends ASTNodeBase {
     type = 'CallExpression';
 
-    constructor(public callee: ASTNode, public args: ASTNode[]) {
+    constructor(
+        public token: Token | null,
+        public callee: ASTNode,
+        public args: ASTNode[]
+    ) {
         super();
     }
 
@@ -590,7 +670,11 @@ export class CallExpressionNode extends ASTNodeBase {
 export class ArrowExpressionNode extends ASTNodeBase {
     type = 'ArrowExpression';
 
-    constructor(public params: ASTNode, public body: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public params: ASTNode,
+        public body: ASTNode
+    ) {
         super();
     }
 
@@ -602,7 +686,12 @@ export class ArrowExpressionNode extends ASTNodeBase {
 export class PostfixExpressionNode extends ASTNodeBase {
     type = 'PostfixExpression';
 
-    constructor(public operator: string, public argument: ASTNode, public prefix: boolean) {
+    constructor(
+        public token: Token | null,
+        public operator: string,
+        public argument: ASTNode,
+        public prefix: boolean
+    ) {
         super();
     }
 
@@ -614,7 +703,10 @@ export class PostfixExpressionNode extends ASTNodeBase {
 export class IdentifierNode extends ASTNodeBase {
     type = 'Identifier';
 
-    constructor(public name: string) {
+    constructor(
+        public token: Token | null,
+        public name: string
+    ) {
         super();
     }
 
@@ -627,6 +719,7 @@ export class ScopedIdentifierNode extends ASTNodeBase {
     type = 'ScopedIdentifier';
 
     constructor(
+        public token: Token | null,
         public name: string[]
     ) {
         super();
@@ -641,6 +734,7 @@ export class TypeParameterNode extends ASTNodeBase {
     type = "TypeParameter";
 
     constructor(
+        public token: Token | null,
         public name: string,
         public constraints: string[] = []
     ) {
@@ -656,6 +750,7 @@ export class TypeNode extends ASTNodeBase {
     type = "Type";
 
     constructor(
+        public token: Token | null,
         public name: string,
         public types?: any[]
     ) {
@@ -671,6 +766,7 @@ export class GenericTypeNode extends ASTNodeBase {
     type = "GenericType";
 
     constructor(
+        public token: Token | null,
         public type_parameters: TypeParameterNode[],
         public base_type: ASTNode
     ) {
@@ -685,7 +781,11 @@ export class GenericTypeNode extends ASTNodeBase {
 export class AssignmentNode extends ASTNodeBase {
     type = 'Assignment';
 
-    constructor(public variable: IdentifierNode, public value: ASTNode) {
+    constructor(
+        public token: Token | null,
+        public variable: IdentifierNode,
+        public value: ASTNode
+    ) {
         super();
     }
 
@@ -698,6 +798,7 @@ export class StructNode extends ASTNodeBase {
     type = "Struct";
 
     constructor(
+        public token: Token | null,
         public name: string,
         public body: ASTNode[],
         public exported: boolean = false,
@@ -716,6 +817,7 @@ export class FieldNode extends ASTNodeBase {
     type = "Field"
 
     constructor(
+        public token: Token | null,
         public field: IdentifierNode,
         public mutable: boolean,
         public data_type?: ASTNode
@@ -732,6 +834,7 @@ export class EnumNode extends ASTNodeBase {
     type = "Enum";
 
     constructor(
+        public token: Token | null,
         public name: string,
         public body: EnumVariantNode[],
         public exported: boolean,
@@ -752,6 +855,7 @@ export class EnumVariantNode extends ASTNodeBase {
     type = "EnumVariant";
 
     constructor(
+        public token: Token | null,
         public name: string,
         public value?: EnumVariantValueNode
 
@@ -767,7 +871,7 @@ export class EnumVariantNode extends ASTNodeBase {
 export class StructVariantNode extends ASTNodeBase {
     type = "StructVariant"
 
-    constructor(public fields: ASTNode[]) {
+    constructor(public token: Token | null, public fields: ASTNode[]) {
         super()
     }
 
@@ -779,7 +883,7 @@ export class StructVariantNode extends ASTNodeBase {
 export class TupleVariantNode extends ASTNodeBase {
     type = "TupleVariant"
 
-    constructor(public types: ASTNode[]) {
+    constructor(public token: Token | null, public types: ASTNode[]) {
         super();
     }
 
@@ -791,7 +895,7 @@ export class TupleVariantNode extends ASTNodeBase {
 export class ConstantVariantNode extends ASTNodeBase {
     type = "ConstantVariant"
 
-    constructor(public types: ASTNode) {
+    constructor(public token: Token | null, public types: ASTNode) {
         super();
     }
 
@@ -804,6 +908,7 @@ export class ModuleNode extends ASTNodeBase {
     type = "Module"
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode,
         public body: ASTNode[]
     ) {
@@ -819,6 +924,7 @@ export class ImportNode extends ASTNodeBase {
     type = "Import"
 
     constructor(
+        public token: Token | null,
         public identifier: IdentifierNode
     ) {
         super();
@@ -833,6 +939,7 @@ export class UseNode extends ASTNodeBase {
     type = "Use"
 
     constructor(
+        public token: Token | null,
         public path: UsePathNode,
         public list?: UseListNode,
         public alias?: string
@@ -849,6 +956,7 @@ export class UsePathNode extends ASTNodeBase {
     type = "UsePath"
 
     constructor(
+        public token: Token | null,
         public path: string[]
     ) {
         super();
@@ -863,6 +971,7 @@ export class UseListNode extends ASTNodeBase {
     type = "UseList"
 
     constructor(
+        public token: Token | null,
         public items: UseItemNode[]
     ) {
         super();
@@ -877,6 +986,7 @@ export class UseItemNode extends ASTNodeBase {
     type = "UseItem"
 
     constructor(
+        public token: Token | null,
         public name: string,
         public alias?: string
     ) {

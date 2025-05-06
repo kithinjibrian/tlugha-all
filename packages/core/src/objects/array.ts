@@ -5,6 +5,7 @@ import {
     NumberNode,
     ReturnNode,
     StringNode,
+    Token,
 } from "../types";
 import { Type } from "./base";
 import { create_node, create_object } from "./create";
@@ -12,7 +13,7 @@ import { FunctionType } from "./function";
 
 let m: Record<string, any> = {
     length(value: any[]) {
-        return new NumberNode(value.length);
+        return new NumberNode(null, value.length);
     },
     pop(value: Type<any>[]) {
         const v = value.pop();
@@ -24,6 +25,7 @@ let m: Record<string, any> = {
     },
     join(value: any[]) {
         return new StringNode(
+            null,
             value.map(v => v.getValue()).join("")
         )
     }
@@ -44,10 +46,12 @@ export class ArrayType extends Type<Type<any>[]> {
                 if (obj.type == "string") {
                     return new FunctionType(
                         new FunctionDecNode(
-                            new IdentifierNode(index),
+                            null,
+                            new IdentifierNode(null, index),
                             undefined,
-                            new BlockNode([
+                            new BlockNode(null, [
                                 new ReturnNode(
+                                    null,
                                     m[index](value, args.map((val) => val.getValue()))
                                 )
                             ])

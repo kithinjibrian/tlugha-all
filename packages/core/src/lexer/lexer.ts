@@ -1,3 +1,4 @@
+import { TError, ErrorCodes } from "../error/error";
 import { TokenType } from "./token";
 
 export interface Token {
@@ -213,6 +214,20 @@ export class Lexer {
         this.lines = input.split('\n');
     }
 
+    private error(code: string, reason: string, hint?: string, context?: string, expected?: string[]): never {
+        throw new TError({
+            code,
+            reason,
+            line: this.line,
+            column: this.column,
+            lineStr: this.getCurrentLine(),
+            stage: 'lexer',
+            hint,
+            context,
+            expected
+        });
+    }
+
     private peek(offset: number = 0): string {
         return this.position + offset < this.input.length ? this.input[this.position + offset] : '\0';
     }
@@ -332,13 +347,97 @@ export class Lexer {
 
     private readString(): Token {
         const startColumn = this.column;
-        const quote = this.peek();
+        const startLine = this.line;
         const currentLineStr = this.getCurrentLine();
+        const quote = this.peek();
         let value = '';
 
+        // Peek ahead to check for triple double-quotes
+        if (quote === '"' && this.peek(1) === '"' && this.peek(2) === '"') {
+            value = this.readMultiLineString();
+        } else if (quote === '"' || quote === "'") {
+            value = this.readSingleLineString();
+        } else {
+            this.error(
+                ErrorCodes.lexer.UNEXPECTED_QUOTE,
+                "Unexpected quote type",
+                `Strings in lugha must be enclosed using one of the following styles:
+
+  1. Double or single quotes for single-line strings:
+     let str = "lugha";
+              let str = 'lugha';
+
+  2. Triple double-quotes for multi-line strings:
+     let mstr = """
+         This is a multiline
+         string in lugha
+     """;
+  `
+            );
+        }
+
+        return {
+            type: TokenType.String,
+            value,
+            line: startLine,
+            column: startColumn,
+            line_str: currentLineStr
+        };
+    }
+
+    // Function to handle single-line strings (enclosed in " or ')
+    private readSingleLineString(): string {
+        let value = '';
+        const quote = this.peek();
         this.advance(); // Skip opening quote
 
         while (this.peek() !== quote && this.peek() !== '\0') {
+            const ch = this.peek();
+
+            // Disallow unescaped newlines
+            if (ch === '\n' || ch === '\r') {
+                this.error(
+                    ErrorCodes.lexer.UNTERMINATED_STRING,
+                    "Unexpected newline in single-line string",
+                    "Use triple double quotes (\"\"\" \"\"\") for multi-line strings.",
+                    `String value: '${value}'`
+                );
+            }
+
+            if (ch === '\\') {
+                this.advance();
+                const escapeChar = this.advance();
+                const escapeSequences: { [key: string]: string } = {
+                    'n': '\n', 't': '\t', '\\': '\\', '"': '"', "'": "'"
+                };
+                value += escapeSequences[escapeChar] || escapeChar;
+            } else {
+                value += this.advance();
+            }
+        }
+
+        if (this.peek() === '\0') {
+            this.error(
+                ErrorCodes.lexer.UNTERMINATED_STRING,
+                "Unterminated string literal.",
+                "Ensure that the string is properly closed with matching quotes.",
+                `String value: '${value}'`,
+                ["Closing quote"]
+            );
+        }
+
+        this.advance(); // Skip closing quote
+        return value;
+    }
+
+    // Function to handle multi-line strings (enclosed in triple double quotes)
+    private readMultiLineString(): string {
+        let value = '';
+        this.advance(); // Skip first "
+        this.advance(); // Skip second "
+        this.advance(); // Skip third "
+
+        while (!(this.peek() === '"' && this.peek(1) === '"' && this.peek(2) === '"') && this.peek() !== '\0') {
             if (this.peek() === '\\') {
                 this.advance();
                 const escapeChar = this.advance();
@@ -352,16 +451,19 @@ export class Lexer {
         }
 
         if (this.peek() === '\0') {
-            throw new Error(`Unterminated string at line ${this.line}, column ${this.column}`);
+            this.error(
+                ErrorCodes.lexer.UNTERMINATED_STRING,
+                "Unterminated string literal.",
+                "Ensure that the string is properly closed with matching triple quotes.",
+                `String value: """${value}"""`,
+                ["Triple closing quotes"]
+            );
         }
 
-        this.advance(); // Skip closing quote
-        return {
-            type: TokenType.String,
-            value, line: this.line,
-            column: startColumn,
-            line_str: currentLineStr
-        };
+        this.advance(); // Skip first closing "
+        this.advance(); // Skip second closing "
+        this.advance(); // Skip third closing "
+        return value;
     }
 
     private readOperator(): Token {
@@ -396,7 +498,10 @@ export class Lexer {
             return { type: oneCharOp, value: c1, line: this.line, column: startColumn, line_str: currentLineStr };
         }
 
-        throw new Error(`Invalid operator at line ${this.line}, column ${this.column}`);
+        this.error(
+            ErrorCodes.lexer.ILLEGAL_CHARACTER,
+            `Invalid operator`
+        );
     }
 
     public getNextToken(): Token {

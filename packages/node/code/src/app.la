@@ -1,18 +1,8 @@
-use std::io::{ print };
+use std::ios::{ print };
 use std::http::{ Server, req_t, next_fn };
 
+
 fun main(): unit {
-    let app = Server::new();
-
-    app.get("/", fun (
-        req: req_t, 
-        res: res_t, 
-        next: next_fn
-    ): unit -> {
-        res.json({
-            name: "kithinji"
-        });
-    });
-
-    app.listen();
+    let app = "hello";
+    print("{}", app);
 }

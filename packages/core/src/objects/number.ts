@@ -4,6 +4,7 @@ import {
     IdentifierNode,
     NumberNode,
     ReturnNode,
+    Token,
 } from "../types";
 import { Type } from "./base";
 import { BoolType } from "./bool";
@@ -61,11 +62,13 @@ export class NumberType extends Type<number> {
 
                 return new FunctionType(
                     new FunctionDecNode(
-                        new IdentifierNode(_prop),
+                        null,
+                        new IdentifierNode(null, _prop),
                         undefined,
-                        new BlockNode([
+                        new BlockNode(null, [
                             new ReturnNode(
-                                new NumberNode(m[_prop](value, args.map((val) => val.getValue())))
+                                null,
+                                new NumberNode(null, m[_prop](value, args.map((val) => val.getValue())))
                             )
                         ])
                     )

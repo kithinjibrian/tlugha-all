@@ -1,4 +1,4 @@
-import { LambdaNode, LambdaType, NumberNode, StringNode } from "../types";
+import { LambdaNode, LambdaType, NumberNode, StringNode, Token } from "../types";
 import { ArrayType } from "./array";
 import { Type } from "./base";
 import { BoolType } from "./bool";
@@ -10,9 +10,9 @@ import { StringType } from "./string";
 export function create_node(value: Type<any>) {
     switch (value.type) {
         case "number":
-            return new NumberNode(value.getValue())
+            return new NumberNode(null, value.getValue())
         case "string":
-            return new StringNode(value.getValue())
+            return new StringNode(null, value.getValue())
         default:
             break;
     }
