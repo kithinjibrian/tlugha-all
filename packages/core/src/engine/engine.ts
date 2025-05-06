@@ -70,7 +70,7 @@ export class Engine implements ASTVisitor {
         public lugha: Function
     ) { }
 
-    private error(
+    public error(
         ast: ASTNode | null,
         code: string,
         reason: string,

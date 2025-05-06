@@ -9,3 +9,4 @@ export * from './engine/cache'
 export * from './engine/engine'
 export * from "./builtin"
 export * from './exec'
+export * from './error/error'

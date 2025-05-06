@@ -3,7 +3,8 @@ import {
     Engine,
     ImportNode,
     Module,
-    Cache
+    Cache,
+    ErrorCodes
 } from "@kithinji/tlugha-core";
 
 import { existsSync } from "fs";
@@ -66,7 +67,6 @@ export class EngineNode extends Engine {
             importWd = path.join(originalWd, name);
             modPath = path.join(importWd, fileToImport);
         } else {
-            // Try recursive lib lookup
             const foundLibPath = this.find_mod_in_lib_hierarchy(this.rd, name);
 
             if (foundLibPath) {
@@ -74,7 +74,15 @@ export class EngineNode extends Engine {
                 importWd = path.dirname(foundLibPath);
                 modPath = foundLibPath;
             } else {
-                throw new Error(`Couldn't find module: '${name}'`);
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Could not find module '${name}'.`,
+                    "Import statements must reference a valid module file or directory.",
+                    `No file '${fileToImport}' or '${name}/__mod__.la' found in '${originalWd}', and module was not found in library paths.`,
+                    [`${name}.la`, `${name}/__mod__.la`],
+                    `Example: import ${name}`
+                );
             }
         }
 
