@@ -149,8 +149,7 @@ export class Engine implements ASTVisitor {
     public async execute_function(
         fn: FunctionDecNode | LambdaNode,
         args: Type<any>[],
-        frame: Frame,
-        module: Module
+        frame: Frame
     ) {
         const name = fn instanceof FunctionDecNode ? fn.identifier.name : "lambda";
 
@@ -258,7 +257,7 @@ export class Engine implements ASTVisitor {
         let main = this.root.frame.get("main");
 
         if (main) {
-            await this.execute_function(main, [], this.root.frame, this.root);
+            await this.execute_function(main, [], this.root.frame);
             let ret = this.root.frame.stack.pop();
 
             let after = [];
@@ -492,7 +491,7 @@ export class Engine implements ASTVisitor {
                 nd instanceof FunctionType ||
                 nd instanceof LambdaType
             ) {
-                await this.execute_function(nd.getValue(), evaluatedArgs, frame, module);
+                await this.execute_function(nd.getValue(), evaluatedArgs, frame);
             } else if (nd instanceof TupleVariantNode) {
                 frame.stack.push(new TupleType(evaluatedArgs));
             } else {
@@ -527,7 +526,7 @@ export class Engine implements ASTVisitor {
                 );
             }
 
-            await this.execute_function(fn.getValue(), evaluatedArgs, frame, module);
+            await this.execute_function(fn.getValue(), evaluatedArgs, frame);
         }
     }
 

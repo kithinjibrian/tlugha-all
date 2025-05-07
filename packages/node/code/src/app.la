@@ -1,7 +1,5 @@
-use std::io::{ print, read, write };
+use std::io::{ print };
 
 fun main(): unit {
-    write("/text.txt", "utf-8");
-    let str = read("/types.ts", "utf-8");
-    print("{}", str);
+    print("{}", "hello world");
 }
