@@ -11,6 +11,7 @@ builtin["__read__"] = {
             const res = await readFile(args[0], args[1]);
             return res;
         } catch (e: any) {
+            console.log(e);
             throw e;
         }
     }

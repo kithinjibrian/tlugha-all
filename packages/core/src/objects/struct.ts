@@ -8,10 +8,12 @@ export class StructType extends Type<Record<string, Type<any>>> {
     constructor(value: Record<string, Type<any>>, name: string = "") {
         super("struct", value, {
             getValue: () => {
-                return Object.entries(value).reduce((acc, [key, val]) => {
-                    acc[key] = val.getValue();
-                    return acc;
-                }, {} as Record<string, any>);
+                return Object.entries(value)
+                    .filter(([_, val]) => !(val instanceof MemberType || val instanceof FunctionType))
+                    .reduce((acc, [key, val]) => {
+                        acc[key] = val.getValue();
+                        return acc;
+                    }, {} as Record<string, any>);
             },
             str: (indentLevel = 0) => {
                 const indent = "  ".repeat(indentLevel);

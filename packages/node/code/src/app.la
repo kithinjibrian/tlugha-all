@@ -1,11 +1,7 @@
-import api;
-
-use std::io::{ print };
-use api::stack::{ Stack };
-
-let app = Stack::new();
+use std::io::{ print, read, write };
 
 fun main(): unit {
-    app.push();
-    print("{}", app);
+    write("/text.txt", "utf-8");
+    let str = read("/types.ts", "utf-8");
+    print("{}", str);
 }

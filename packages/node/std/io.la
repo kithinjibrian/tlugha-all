@@ -1,3 +1,11 @@
 fun print<T>(format: string, ...rest: Array<T>): unit {
     root::builtin::__print__(format, rest);
 }
+
+fun read<T>(filename: string, encoding: string): unit {
+    return root::builtin::__read__(filename, encoding);
+}
+
+fun write<T>(filename: string, data: string): unit {
+    root::builtin::__write__(filename, data);
+}
