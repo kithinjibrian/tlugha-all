@@ -1,8 +1,11 @@
-use std::ios::{ print };
-use std::http::{ Server, req_t, next_fn };
+import api;
 
+use std::io::{ print };
+use api::stack::{ Stack };
+
+let app = Stack::new();
 
 fun main(): unit {
-    let app = "hello";
+    app.push();
     print("{}", app);
 }

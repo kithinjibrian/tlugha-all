@@ -1,0 +1,13 @@
+struct Stack {
+    name: string;
+
+    fun new(): Stack {
+        return Stack {
+            name: "brian"
+        };
+    }
+
+    fun push(self: Self): unit {
+        self.name = "lol";
+    }
+}

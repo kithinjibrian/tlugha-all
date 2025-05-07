@@ -508,7 +508,11 @@ export class Engine implements ASTVisitor {
             await this.visit(node.callee, { frame, module, args: evaluatedArgs });
             const fn = frame.stack.pop();
 
-            if (!(fn instanceof FunctionType || fn instanceof LambdaType)) {
+            if (!(
+                fn instanceof FunctionType ||
+                fn instanceof LambdaType ||
+                fn instanceof MemberType
+            )) {
                 this.error(
                     node,
                     ErrorCodes.runtime.NOT_CALLABLE,
@@ -841,7 +845,7 @@ export class Engine implements ASTVisitor {
                     "'super' refers to a parent module, which doesn't exist at the root level.",
                     "Tried to access parent of the root module.",
                     ["self", "root", "or specific module name"],
-                    "'use super.graphics;' in a submodule"
+                    "'use super::graphics;' in a submodule"
                 );
             }
             current = module.parent;
@@ -854,8 +858,7 @@ export class Engine implements ASTVisitor {
                     `Undefined module: '${rootToken}'`,
                     `The module '${rootToken}' does not exist.`,
                     `Available modules: ${module.children.map(m => `'${m.name}'`).join(", ") || "none"}`,
-                    ["existing module name"],
-                    "use graphics::shapes::Circle;"
+                    ["existing module name"]
                 );
             }
         }
