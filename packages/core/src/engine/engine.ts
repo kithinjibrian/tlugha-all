@@ -488,7 +488,10 @@ export class Engine implements ASTVisitor {
                 );
             }
 
-            if (nd instanceof FunctionType || nd instanceof LambdaType) {
+            if (
+                nd instanceof FunctionType ||
+                nd instanceof LambdaType
+            ) {
                 await this.execute_function(nd.getValue(), evaluatedArgs, frame, module);
             } else if (nd instanceof TupleVariantNode) {
                 frame.stack.push(new TupleType(evaluatedArgs));
