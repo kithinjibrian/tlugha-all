@@ -9,25 +9,23 @@ export interface Env {
 export interface Operations<T> {
     getType?: () => string;
     getValue?: () => any;
-    inc?: () => Type<T>;
-    dec?: () => Type<T>;
-    not?: () => Type<boolean>;
-    add?: (obj: Type<T>) => Type<T>;
-    minus?: (obj: Type<T>) => Type<T>;
-    divide?: (obj: Type<T>) => Type<T>;
-    modulo?: (obj: Type<T>) => Type<T>;
-    multiply?: (obj: Type<T>) => Type<T>;
-    str?: (indentLevel?: number) => string;
-    lt?: (obj: Type<T>) => Type<boolean>;
-    gt?: (obj: Type<T>) => Type<boolean>;
-    lte?: (obj: Type<T>) => Type<boolean>;
-    gte?: (obj: Type<T>) => Type<boolean>;
-    eq?: (obj: Type<T>) => Type<boolean>;
-    neq?: (obj: Type<T>) => Type<boolean>;
-    or?: (obj: Type<boolean>) => Type<boolean>;
-    and?: (obj: Type<boolean>) => Type<boolean>;
-    set?: (index: Type<any>, new_value: Type<any>) => void;
-    get?: (env: Env, obj: Type<any>, args: Type<any>[]) => any;
+    not?: (env: Env) => Promise<Type<boolean>>;
+    add?: (env: Env, obj: Type<T>) => Promise<Type<T>>;
+    minus?: (env: Env, obj: Type<T>) => Promise<Type<T>>;
+    divide?: (env: Env, obj: Type<T>) => Promise<Type<T>>;
+    modulo?: (env: Env, obj: Type<T>) => Promise<Type<T>>;
+    multiply?: (env: Env, obj: Type<T>) => Promise<Type<T>>;
+    str?: (env: Env, indentLevel?: number) => Promise<string>;
+    lt?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    gt?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    lte?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    gte?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    eq?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    neq?: (env: Env, obj: Type<T>) => Promise<Type<boolean>>;
+    or?: (env: Env, obj: Type<boolean>) => Promise<Type<boolean>>;
+    and?: (env: Env, obj: Type<boolean>) => Promise<Type<boolean>>;
+    set?: (env: Env, index: Type<any>, new_value: Type<any>) => Promise<void>;
+    get?: (env: Env, obj: Type<any>, args: Type<any>[]) => Promise<any>;
 }
 
 export abstract class Type<T> {
@@ -56,136 +54,123 @@ export abstract class Type<T> {
         return this.value;
     }
 
-    str(indentLevel?: number): string {
+    async str(env: Env, indentLevel?: number): Promise<any> {
         if (this.operations.str) {
-            return this.operations.str(indentLevel);
+            return await this.operations.str(env, indentLevel);
         }
 
         return JSON.stringify(this.value, null, 2);
     }
 
-    get(env: Env, obj: Type<any>, args: Type<any>[]): any {
+    async get(env: Env, obj: Type<any>, args: Type<any>[]): Promise<any> {
         if (this.operations.get) {
-            return this.operations.get(env, obj, args);
+            return await this.operations.get(env, obj, args);
         }
         throw new Error(`Operation 'get' not supported for type ${this.type}`);
     }
 
-    set(index: Type<any>, new_value: Type<any>) {
+    async set(env: Env, index: Type<any>, new_value: Type<any>) {
         if (this.operations.set) {
-            return this.operations.set(index, new_value);
+            return await this.operations.set(env, index, new_value);
         }
         throw new Error(`Operation 'set' not supported for type ${this.type}`);
     }
 
-    add(obj: Type<T>): Type<T> {
+    async add(env: Env, obj: Type<T>): Promise<Type<T>> {
         if (this.operations.add) {
-            return this.operations.add(obj);
+            return await this.operations.add(env, obj);
         }
+
         throw new Error(`Operation 'add' not supported for type ${this.type}`);
     }
 
-    minus(obj: Type<T>): Type<T> {
+    async minus(env: Env, obj: Type<T>): Promise<Type<T>> {
         if (this.operations.minus) {
-            return this.operations.minus(obj);
+            return await this.operations.minus(env, obj);
         }
         throw new Error(`Operation 'minus' not supported for type ${this.type}`);
     }
 
-    multiply(obj: Type<T>): Type<T> {
+    async multiply(env: Env, obj: Type<T>): Promise<Type<T>> {
         if (this.operations.multiply) {
-            return this.operations.multiply(obj);
+            return await this.operations.multiply(env, obj);
         }
         throw new Error(`Operation 'multiply' not supported for type ${this.type}`);
     }
 
-    divide(obj: Type<T>): Type<T> {
+    async divide(env: Env, obj: Type<T>): Promise<Type<T>> {
         if (this.operations.divide) {
-            return this.operations.divide(obj);
+            return await this.operations.divide(env, obj);
         }
         throw new Error(`Operation 'divide' not supported for type ${this.type}`);
     }
 
-    modulo(obj: Type<T>): Type<T> {
+    async modulo(env: Env, obj: Type<T>): Promise<Type<T>> {
         if (this.operations.modulo) {
-            return this.operations.modulo(obj);
+            return await this.operations.modulo(env, obj);
         }
         throw new Error(`Operation 'modulo' not supported for type ${this.type}`);
     }
 
-    lt(obj: Type<T>): Type<boolean> {
+    async lt(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.lt) {
-            return this.operations.lt(obj);
+            return await this.operations.lt(env, obj);
         }
         throw new Error(`Operation 'lt' not supported for type ${this.type}`);
     }
 
-    gt(obj: Type<T>): Type<boolean> {
+    async gt(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.gt) {
-            return this.operations.gt(obj);
+            return await this.operations.gt(env, obj);
         }
         throw new Error(`Operation 'gt' not supported for type ${this.type}`);
     }
 
-    lte(obj: Type<T>): Type<boolean> {
+    async lte(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.lte) {
-            return this.operations.lte(obj);
+            return await this.operations.lte(env, obj);
         }
         throw new Error(`Operation 'lt' not supported for type ${this.type}`);
     }
 
-    gte(obj: Type<T>): Type<boolean> {
+    async gte(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.gte) {
-            return this.operations.gte(obj);
+            return await this.operations.gte(env, obj);
         }
         throw new Error(`Operation 'gt' not supported for type ${this.type}`);
     }
 
-    eq(obj: Type<T>): Type<boolean> {
+    async eq(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.eq) {
-            return this.operations.eq(obj);
+            return await this.operations.eq(env, obj);
         }
         throw new Error(`Operation 'eq' not supported for type ${this.type}`);
     }
 
-    neq(obj: Type<T>): Type<boolean> {
+    async neq(env: Env, obj: Type<T>): Promise<Type<boolean>> {
         if (this.operations.neq) {
-            return this.operations.neq(obj);
+            return await this.operations.neq(env, obj);
         }
         throw new Error(`Operation 'neq' not supported for type ${this.type}`);
     }
 
-    not(): Type<boolean> {
+    async not(env: Env,): Promise<Type<boolean>> {
         if (this.operations.not) {
-            return this.operations.not();
+            return await this.operations.not(env);
         }
         throw new Error(`Operation 'not' not supported for type ${this.type}`);
     }
 
-    inc(): Type<T> {
-        if (this.operations.inc) {
-            return this.operations.inc();
-        }
-        throw new Error(`Operation 'inc' not supported for type ${this.type}`);
-    }
-
-    dec(): Type<T> {
-        if (this.operations.dec) {
-            return this.operations.dec();
-        }
-        throw new Error(`Operation 'dec' not supported for type ${this.type}`);
-    }
-
-    and(obj: Type<boolean>): Type<boolean> {
+    async and(env: Env, obj: Type<boolean>): Promise<Type<boolean>> {
         if (this.operations.and) {
-            return this.operations.and(obj);
+            return await this.operations.and(env, obj);
         }
         throw new Error(`Operation 'and' not supported for type ${this.type}`);
     }
 
-    or(obj: Type<boolean>): Type<boolean> {
+    async or(env: Env, obj: Type<boolean>): Promise<Type<boolean>> {
         if (this.operations.or) {
-            return this.operations.or(obj);
+            return await this.operations.or(env, obj);
         }
         throw new Error(`Operation 'or' not supported for type ${this.type}`);
     }

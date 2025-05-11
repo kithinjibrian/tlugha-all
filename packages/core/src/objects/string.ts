@@ -527,44 +527,44 @@ class Engine implements ASTVisitor {
         });
     }
 
-    public visit(node?: ASTNode, args?: Record<string, any>): void {
+    public async visit(node?: ASTNode, args?: Record<string, any>): Promise<void> {
         if (node == undefined) return;
 
         try {
-            node.accept(this, args);
+            await node.accept(this, args);
         } catch (error) {
             throw error;
         }
     }
 
-    run() {
-        this.visit(this.ast)
+    async run() {
+        await this.visit(this.ast)
 
         return this.str.join("");
     }
 
-    visitProgString(
+    async visitProgString(
         node: StringProgNode,
         args?: Record<string, any>
     ) {
-        this.visit(node.program, args);
+        await this.visit(node.program, args);
     }
 
-    visitSourceElements(
+    async visitSourceElements(
         node: SourceElementsNode,
         args?: Record<string, any>
     ) {
         for (const src of node.sources) {
-            this.visit(src, args);
+            await this.visit(src, args);
         }
     }
 
-    visitText(node: TextNode, args?: Record<string, any>) {
+    async visitText(node: TextNode, args?: Record<string, any>) {
         this.write(node.value);
     }
 
     // TODO: Can't accept 2 placeholders
-    visitPlaceholder(node: PlaceholderNode, args?: Record<string, any>) {
+    async visitPlaceholder(node: PlaceholderNode, args?: Record<string, any>) {
         let fieldValue: any;
 
         // Get the field value based on the type of the placeholder (index, name, auto)
@@ -586,7 +586,7 @@ class Engine implements ASTVisitor {
             );
         }
 
-        let formattedValue = fieldValue.str();
+        let formattedValue = await fieldValue.str();
 
         if (node.width !== undefined) {
             // Format the value according to width and alignment
@@ -622,13 +622,13 @@ let m: Record<string, any> = {
         }
         return result(env.engine, new NumberType(num), null)
     },
-    format(env: Env, value: string, args: any[]) {
+    async format(env: Env, value: string, args: any[]) {
         const lexer = new Lexer(value);
         const tokens = lexer.tokenize();
         const parser = new Parser(tokens);
         const ast = parser.parse();
         const engine = new Engine(ast, env, args);
-        const res = engine.run();
+        const res = await engine.run();
         return new StringNode(null, res);
     }
 }
@@ -636,11 +636,11 @@ let m: Record<string, any> = {
 export class StringType extends Type<string> {
     constructor(value: string) {
         super("string", value, {
-            add: (obj: Type<string>) => new StringType(value + obj.getValue()),
-            eq: (obj: Type<string>) => new BoolType(value === obj.getValue()),
-            neq: (obj: Type<string>) => this.eq(obj).not(),
-            str: () => `"${value}"`,
-            get: (env: Env, obj: Type<any>, args: Type<any>[]) => {
+            add: async (env: Env, obj: Type<string>) => new StringType(value + obj.getValue()),
+            eq: async (env: Env, obj: Type<string>) => new BoolType(value === obj.getValue()),
+            neq: async (env: Env, obj: Type<string>) => await (await this.eq(env, obj)).not(env),
+            str: async (env: Env) => `"${value}"`,
+            get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
                 const index = obj.getValue();
 
                 if (obj.type == "string") {
@@ -657,7 +657,7 @@ export class StringType extends Type<string> {
                             new BlockNode(null, [
                                 new ReturnNode(
                                     null,
-                                    m[index](env, value, args.map((val) => val))
+                                    await m[index](env, value, args.map((val) => val))
                                 )
                             ])
                         )

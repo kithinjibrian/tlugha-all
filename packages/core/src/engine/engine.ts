@@ -77,9 +77,9 @@ import {
 
 export class Engine implements ASTVisitor {
     private extension: ExtensionStore<unknown> = ExtensionStore.get_instance();
-    private enum: number = 0;
 
     constructor(
+        public file: string,
         public rd: string,
         public wd: string,
         public ast: ASTNode | null,
@@ -107,6 +107,7 @@ export class Engine implements ASTVisitor {
         }
 
         throw new TError({
+            file: this.file,
             code,
             reason,
             line: token.line,
@@ -163,6 +164,38 @@ export class Engine implements ASTVisitor {
         }
     }
 
+    public get_mod_from_root(name: string) {
+        return this.root.children.find(mod => mod.name == name)
+    }
+
+    public async result(state: string, node: any) {
+        await this.visitScopedIdentifier(
+            new ScopedIdentifierNode(null, ["Result", state]),
+            { module: this.root, frame: this.root.frame }
+        );
+
+        const result = this.root.frame.stack.pop();
+
+        if (result) {
+            return new EnumType(state,
+                new TupleType([
+                    node
+                ]),
+                result.members
+            )
+        } else {
+            throw new Error(`Can't find Result enum`)
+        }
+    }
+
+    public async result_ok(js_value: any) {
+        return await this.result("Ok", create_object(js_value))
+    }
+
+    public async result_err(str: string) {
+        return await this.result("Err", new StringType(str))
+    }
+
     public async execute_function(
         fn: FunctionDecNode | LambdaNode,
         args: Type<any>[],
@@ -175,11 +208,9 @@ export class Engine implements ASTVisitor {
 
         if (fn.params) {
             fn.params.parameters.forEach((param, i) => {
-                let _param: ParameterNode = param;
-
                 let value = undefined;
 
-                if (_param.variadic) {
+                if (param.variadic) {
                     const rest = [];
 
                     for (let y = i; y < args.length; y++) {
@@ -191,15 +222,7 @@ export class Engine implements ASTVisitor {
                     value = args[i];
                 }
 
-                new_frame.define(
-                    _param.identifier.name, new ParameterNode(
-                        _param.token,
-                        _param.identifier,
-                        _param.variadic,
-                        _param.data_type,
-                        _param.expression,
-                        value,
-                    ))
+                new_frame.define(param.identifier.name, value)
             });
         }
 
@@ -230,42 +253,27 @@ export class Engine implements ASTVisitor {
             let value;
             if (inbuilt.async) {
                 try {
-                    value = new EnumType("Ok",
-                        new TupleType([
-                            create_object(await inbuilt.exec(filtered))
-                        ])
-                    )
-                } catch (e: any) {
-                    value = new EnumType("Err",
-                        new TupleType([
-                            new StringType(e.message)
-                        ])
-                    )
-                }
-            } else {
-                try {
-                    value = new EnumType("Ok",
-                        new TupleType([
-                            create_object(inbuilt.exec(filtered))
-                        ])
-                    )
+                    value = await this.result_ok(await inbuilt.exec(filtered));
                 } catch (e: any) {
                     if (e instanceof Panic) {
                         throw e;
                     }
-
-                    value = new EnumType("Err",
-                        new TupleType([
-                            new StringType(e.message)
-                        ])
-                    )
+                    value = await this.result_err(e.message);
+                }
+            } else {
+                try {
+                    value = await this.result_ok(inbuilt.exec(filtered));
+                } catch (e: any) {
+                    if (e instanceof Panic) {
+                        throw e;
+                    }
+                    value = await this.result_err(e.message);
                 }
             }
 
             if (value !== undefined && value !== null)
                 frame.stack.push(value)
         } else {
-
             await this.visit(fn.body, { frame: new_frame, module: fn.module })
 
             if (!new_frame.return_value && new_frame.stack.length > 0) {
@@ -670,8 +678,7 @@ export class Engine implements ASTVisitor {
         if (value?.getType() == "function") {
             frame.define(node.identifier.name, value.getValue());
         } else {
-            node.value = value;
-            frame.define(node.identifier.name, node);
+            frame.define(node.identifier.name, value);
         }
 
     }
@@ -703,12 +710,13 @@ export class Engine implements ASTVisitor {
             object = o.object;
             property = o.property;
 
-            const value = await object.get({
+            left = await object.get({
                 engine: this,
                 frame,
                 module
             }, property, []);
-            if (!value) {
+
+            if (!left) {
                 this.error(
                     node.left,
                     ErrorCodes.runtime.UNDEFINED_PROPERTY,
@@ -719,8 +727,6 @@ export class Engine implements ASTVisitor {
                     "obj.field = 42"
                 );
             }
-
-            left = { value };
         } else {
             left = this.getScopedSymbol(node.left as ScopedIdentifierNode, { frame, module });
             if (!left) {
@@ -750,23 +756,29 @@ export class Engine implements ASTVisitor {
             );
         }
 
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
         let result: Type<any>;
         try {
             switch (node.operator) {
                 case "+=":
-                    result = left.value.add(right);
+                    result = await left.add(env, right);
                     break;
                 case "-=":
-                    result = left.value.minus(right);
+                    result = await left.minus(env, right);
                     break;
                 case "*=":
-                    result = left.value.multiply(right);
+                    result = await left.multiply(env, right);
                     break;
                 case "/=":
-                    result = left.value.divide(right);
+                    result = await left.divide(env, right);
                     break;
                 case "%=":
-                    result = left.value.modulo(right);
+                    result = await left.modulo(env, right);
                     break;
                 case "=":
                     result = right;
@@ -795,9 +807,20 @@ export class Engine implements ASTVisitor {
         }
 
         if (object && property) {
-            object.set(property, result);
+            await object.set(env, property, result);
         } else {
-            left.value = result;
+            if (node.left instanceof ScopedIdentifierNode)
+                this.setScopedSymbol(
+                    node.left,
+                    result,
+                    { frame, module }
+                );
+            else
+                this.error(
+                    node,
+                    "ASSIGNMENT_ERROR",
+                    ""
+                )
         }
 
         frame.stack.push(result);
@@ -862,46 +885,52 @@ export class Engine implements ASTVisitor {
             );
         }
 
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
         let result: Type<any>;
         switch (node.operator) {
             case "+":
-                result = left.add(right);
+                result = await left.add(env, right);
                 break;
             case "-":
-                result = left.minus(right);
+                result = await left.minus(env, right);
                 break;
             case "*":
-                result = left.multiply(right);
+                result = await left.multiply(env, right);
                 break;
             case "/":
-                result = left.divide(right);
+                result = await left.divide(env, right);
                 break;
             case "%":
-                result = left.modulo(right);
+                result = await left.modulo(env, right);
                 break;
             case "<":
-                result = left.lt(right);
+                result = await left.lt(env, right);
                 break;
             case "<=":
-                result = left.lte(right);
+                result = await left.lte(env, right);
                 break;
             case ">":
-                result = left.gt(right);
+                result = await left.gt(env, right);
                 break;
             case ">=":
-                result = left.gte(right);
+                result = await left.gte(env, right);
                 break;
             case "==":
-                result = left.eq(right);
+                result = await left.eq(env, right);
                 break;
             case "!=":
-                result = left.neq(right);
+                result = await left.neq(env, right);
                 break;
             case "&&":
-                result = left.and(right);
+                result = await left.and(env, right);
                 break;
             case "||":
-                result = left.or(right);
+                result = await left.or(env, right);
                 break;
             default:
                 this.error(
@@ -916,6 +945,22 @@ export class Engine implements ASTVisitor {
         }
 
         frame.stack.push(result);
+    }
+
+    setScopedSymbol(
+        node: ScopedIdentifierNode,
+        value: Type<any>,
+        { frame, module }: { frame: Frame; module: Module }
+    ) {
+        const __p = (search_frame: Frame, name: string, value: Type<any>) => {
+            search_frame.assign(name, value);
+        };
+
+        let current: Module | undefined;
+
+        if (node.name.length === 1) {
+            return __p(frame, node.name[0], value);
+        }
     }
 
     getScopedSymbol(
@@ -1017,10 +1062,8 @@ export class Engine implements ASTVisitor {
     ) {
         const symbol = this.getScopedSymbol(node, { frame, module });
 
-        if (symbol instanceof VariableNode ||
-            symbol instanceof ParameterNode
-        ) {
-            frame.stack.push(symbol.value);
+        if (symbol instanceof Type) {
+            frame.stack.push(symbol);
         } else if (symbol instanceof StructNode) {
             frame.stack.push(symbol);
         } else if (symbol instanceof TaggedNode) {
@@ -1034,12 +1077,12 @@ export class Engine implements ASTVisitor {
             }
 
             frame.stack.push(symbol);
-        } else if (symbol instanceof Type) {
-            frame.stack.push(symbol);
         } else if (symbol instanceof FunctionDecNode) {
             frame.stack.push(new FunctionType(symbol));
         } else if (symbol instanceof LambdaNode) {
             frame.stack.push(new LambdaType(symbol))
+        } else {
+            throw new Error(`Unknown object in engine: ${symbol}`)
         }
     }
 
@@ -1054,13 +1097,7 @@ export class Engine implements ASTVisitor {
             if (mod) {
                 frame.stack.push(mod);
             }
-        }
-
-        if (symbol instanceof VariableNode ||
-            symbol instanceof ParameterNode
-        ) {
-            frame.stack.push(symbol.value);
-        } else if (symbol instanceof StructNode) {
+        } else {
             frame.stack.push(symbol);
         }
     }
@@ -1075,12 +1112,7 @@ export class Engine implements ASTVisitor {
         for (const value of expression) {
             const new_frame = new Frame(frame);
 
-            node.variable.variables.value = value;
-
-            new_frame.define(
-                node.variable.variables.identifier.name,
-                node.variable.variables
-            );
+            new_frame.define(node.variable.variables.identifier.name, value);
 
             await this.visit(node.body, {
                 frame: new_frame,
@@ -1397,6 +1429,12 @@ export class Engine implements ASTVisitor {
         value: Type<any>,
         { frame, module }: { frame: Frame, module: Module }
     ): Promise<boolean> {
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
         if (
             pattern instanceof NumberNode ||
             pattern instanceof StringNode ||
@@ -1405,7 +1443,7 @@ export class Engine implements ASTVisitor {
             await this.visit(pattern, { frame, module });
             const res = frame.stack.pop() as Type<any>;
 
-            return res.eq(value).getValue();
+            return (await res.eq(env, value)).getValue();
         }
 
         if (pattern instanceof EnumPatternNode) {

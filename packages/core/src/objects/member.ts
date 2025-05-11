@@ -1,10 +1,10 @@
 import { MemberDecNode } from "../parser/ast";
-import { Type } from "./base";
+import { Env, Type } from "./base";
 
 export class MemberType extends Type<MemberDecNode> {
     constructor(value: MemberDecNode) {
         super("member", value, {
-            str() {
+            async str(env: Env) {
                 return `[Member: ${value.identifier}]`
             }
         });

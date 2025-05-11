@@ -1,13 +1,33 @@
-import json;
-
-use json::{ parse, Value };
-
 use std::io::{ print };
 
+struct Vector {
+    x: number;
+    y: number;
+    z: number;
+}
+
+impl Vector {
+    fun __add__(self: Self, rhs: Self): Self {
+        return Vector {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        };
+    }
+}
+
 fun main(): unit {
-    let x = "1000";
+    let a = Vector {
+        x: 90,
+        y: 80,
+        z: 70
+    };
 
-    let a = parse(x).unwrap();
+    let b = Vector {
+        x: 10,
+        y: 10,
+        z: 10
+    };
 
-    print("{}", a[0]);
+    print("{}", a + b);
 }

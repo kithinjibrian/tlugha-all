@@ -1,4 +1,4 @@
-import { Type } from "./base";
+import { Env, Type } from "./base";
 import { NumberType } from "./number";
 
 export class RangeType extends Type<Type<number>[]> {
@@ -8,7 +8,7 @@ export class RangeType extends Type<Type<number>[]> {
         public is_inclusive: boolean
     ) {
         super("range", [], {
-            str: () => `[${start.getValue()}..${end.getValue()}]`,
+            str: async (env: Env) => `[${start.getValue()}..${end.getValue()}]`,
             getValue: () => {
                 return []
             }

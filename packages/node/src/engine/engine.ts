@@ -12,6 +12,7 @@ import * as path from 'path';
 
 export class EngineNode extends Engine {
     constructor(
+        file: string,
         rd: string,
         wd: string,
         ast: ASTNode | null,
@@ -19,6 +20,7 @@ export class EngineNode extends Engine {
         lugha: Function
     ) {
         super(
+            file,
             rd,
             wd,
             ast,

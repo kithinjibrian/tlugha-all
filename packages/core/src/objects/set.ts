@@ -1,23 +1,26 @@
-import { Engine } from "../types";
 import { Env, Type } from "./base";
+import { EnumType } from "./enum";
 
 export class SetType extends Type<Type<any>[]> {
     constructor(value: Type<any>[]) {
         super("set", value, {
-            str: () => `Set {${value.map(v => v.str()).join(", ")}}`,
+            str: async (env: Env) => {
+                const strings = await Promise.all(value.map(async v => await v.str(env)));
+                return `set {${strings.join(", ")}}`;
+            },
             getValue: () => {
                 return value.map(i => {
-                    return i.getValue();
+                    return i instanceof EnumType ? i : i.getValue();
                 })
             },
-            get: (env: Env, obj: Type<number>) => {
+            get: async (env: Env, obj: Type<number>) => {
                 const index = obj.getValue();
                 if (index >= 0 && index < value.length) {
                     return value[index];
                 }
                 throw new Error(`Index ${index} out of bounds`);
             },
-            set: (index: Type<number>, newValue: Type<any>) => {
+            set: async (env: Env, index: Type<number>, newValue: Type<any>) => {
                 const idx = index.getValue();
                 if (idx < 0 || idx >= value.length) {
                     throw new Error(`Index ${idx} out of bounds`);

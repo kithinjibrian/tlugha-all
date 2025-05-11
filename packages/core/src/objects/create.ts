@@ -1,4 +1,4 @@
-import { ArrayNode, ASTNode, IdentifierNode, LambdaNode, LambdaType, MapNode, NumberNode, PropertyNode, ScopedIdentifierNode, SetNode, StringNode, StructAlreadyInitNode, StructFieldNode, StructInitNode, StructNode, StructType, TaggedNode, TupleNode, TupleVariantNode } from "../types";
+import { ArrayNode, ASTNode, BooleanNode, IdentifierNode, LambdaNode, LambdaType, MapNode, NumberNode, PropertyNode, ScopedIdentifierNode, SetNode, StringNode, StructAlreadyInitNode, StructFieldNode, StructInitNode, StructNode, StructType, TaggedNode, TupleNode, TupleVariantNode } from "../types";
 import { ArrayType } from "./array";
 import { Type } from "./base";
 import { BoolType } from "./bool";
@@ -12,6 +12,8 @@ export function create_node(value: Type<any>, to_tuple_variant: boolean = false)
     switch (value.type) {
         case "number":
             return new NumberNode(null, value.getValue())
+        case "bool":
+            return new BooleanNode(null, value.getValue())
         case "string":
             return new StringNode(null, value.getValue())
         case "enum": {

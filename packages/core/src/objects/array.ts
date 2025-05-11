@@ -14,6 +14,7 @@ import {
 } from "../types";
 import { Env, Type } from "./base";
 import { create_node } from "./create";
+import { EnumType } from "./enum";
 import { FunctionType } from "./function";
 
 let m: Record<string, any> = {
@@ -141,10 +142,13 @@ let m: Record<string, any> = {
 export class ArrayType extends Type<Type<any>[]> {
     constructor(value: Type<any>[]) {
         super("array", value, {
-            str: () => `[${value.map(v => v.str()).join(", ")}]`,
+            str: async (env: Env) => {
+                const strings = await Promise.all(value.map(async v => await v.str(env)));
+                return `[${strings.join(", ")}]`;
+            },
             getValue: () => {
                 return value.map(i => {
-                    return i.getValue();
+                    return i instanceof EnumType ? i : i.getValue();
                 })
             },
             get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
@@ -176,7 +180,7 @@ export class ArrayType extends Type<Type<any>[]> {
                     throw new Error(`Index ${index} out of bounds`);
                 }
             },
-            set: (index: Type<number>, newValue: Type<any>) => {
+            set: async (env: Env, index: Type<number>, newValue: Type<any>) => {
                 const idx = index.getValue();
                 if (idx < 0 || idx >= value.length) {
                     throw new Error(`Index ${idx} out of bounds`);

@@ -1,5 +1,6 @@
 import { BlockNode, BooleanNode, Engine, FunctionDecNode, FunctionType, IdentifierNode, ReturnNode } from "../types";
 import { Env, Type } from "./base";
+import { EnumType } from "./enum";
 
 let m: Record<string, any> = {
     is_empty(env: Env, value: any[]) {
@@ -12,10 +13,13 @@ let m: Record<string, any> = {
 export class TupleType extends Type<Type<any>[]> {
     constructor(value: Type<any>[]) {
         super("tuple", value, {
-            str: () => `(${value.map(v => v.str()).join(", ")})`,
+            str: async (env: Env) => {
+                const strings = await Promise.all(value.map(async v => await v.str(env)));
+                return `(${strings.join(", ")})`;
+            },
             getValue: () => {
                 return value.map(i => {
-                    return i.getValue();
+                    return i instanceof EnumType ? i : i.getValue();
                 })
             },
             get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
@@ -42,7 +46,7 @@ export class TupleType extends Type<Type<any>[]> {
                     throw new Error(`Index ${index} out of bounds`);
                 }
             },
-            set: (index: Type<number>, newValue: Type<any>) => {
+            set: async (env: Env, index: Type<number>, newValue: Type<any>) => {
                 const idx = index.getValue();
                 if (idx < 0 || idx >= value.length) {
                     throw new Error(`Index ${idx} out of bounds`);

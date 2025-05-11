@@ -1,10 +1,10 @@
 import { ASTNode, FunctionDecNode } from "../parser/ast";
-import { Type } from "./base";
+import { Env, Type } from "./base";
 
 export class FunctionType extends Type<FunctionDecNode> {
     constructor(value: FunctionDecNode) {
         super("function", value, {
-            str() {
+            async str(env: Env) {
                 return `[Function: ${value.identifier}]`
             }
         });

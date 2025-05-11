@@ -9,6 +9,7 @@ enum TokenType {
     False,
     Comma,
     Colon,
+    Slash,
     LeftBrace,
     RightBrace,
     LeftBracket,
@@ -33,6 +34,7 @@ fun one_char(c: string): TokenType {
         "}" => TokenType::RightBrace,
         "[" => TokenType::LeftBracket,
         "]" => TokenType::RightBracket,
+        "\\" => TokenType::Slash,
         _ => TokenType::OP
     };
 }
@@ -98,6 +100,7 @@ impl Lexer {
         let c3 = self.peek(2);
 
         let one_char_op = one_char(c1);
+
         if let TokenType::OP = (one_char_op) { } else {
             self.advance();
             return Result::Ok(
@@ -186,8 +189,27 @@ impl Lexer {
         if(quote == '"') {
             self.advance();
 
-            while(self.peek(0) != quote) {
-                value.push(self.advance());
+            while(self.peek(0) != quote && self.peek(0) != r"\0") {
+                let ch = self.peek(0);
+
+                if(ch == "\\") {
+                    self.advance();
+                    let escape_char = self.advance();
+                    let escape_seqs = map {
+                        "n": "\n",
+                        "t": "\t",
+                        "\\": "\\",
+                        '"': '"',
+                        "'": "'"
+                    };
+
+                    match(escape_seqs.get(escape_char)) {
+                        Result::Ok(c) => value.push(c),
+                        Result::Err(e) => value.push(escape_char)
+                    }
+                } else {
+                    value.push(self.advance());
+                }
             }
         };
 

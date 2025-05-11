@@ -1,4 +1,4 @@
-import { ASTNode, BlockNode, BoolType, Engine, Frame, FunctionDecNode, FunctionType, IdentifierNode, MemberDecNode, MemberType, NumberNode, NumberType, ReturnNode } from "../types";
+import { ASTNode, BlockNode, BoolType, Engine, Frame, FunctionDecNode, FunctionType, IdentifierNode, MemberDecNode, MemberType, NumberNode, NumberType, ReturnNode, TupleType } from "../types";
 import { Env, Type } from "./base";
 
 
@@ -24,11 +24,11 @@ export class EnumType extends Type<Type<any>> {
         members?: Array<FunctionDecNode | MemberDecNode>
     ) {
         super("enum", value, {
-            str: () => `${tag}${!(value instanceof NumberType) ? value.str() : ''}`,
+            str: async () => `${tag}${!(value instanceof NumberType) ? await value.str() : ''}`,
             getValue: () => {
                 return value;
             },
-            eq: (obj: Type<any>) => {
+            eq: async (env: Env, obj: Type<any>) => {
                 if (obj instanceof EnumType) {
                     if (obj.tag == tag) {
                         return new BoolType(true)
@@ -36,8 +36,8 @@ export class EnumType extends Type<Type<any>> {
                 }
                 return new BoolType(false)
             },
-            neq: (obj: Type<any>) => {
-                return this.eq(obj).not();
+            neq: async (env: Env, obj: Type<any>) => {
+                return await(await this.eq(env, obj)).not(env);
             },
             get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
                 const index = obj.getValue();

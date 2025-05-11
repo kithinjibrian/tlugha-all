@@ -25,14 +25,14 @@ enum Option<T> {
 }
 
 impl Option {
-    fun unwrap(self: Self): T {
+    fun unwrap(self: Self): unit {
         match(self) {
             Option::Some(val) => val,
             Option::None => root::builtin::__panic__("called `Option::unwrap()` on an `None` value")
         } 
     }
 
-    fun expect(self: Self, message: string): T {
+    fun expect(self: Self, message: string): unit {
         match(self) {
             Result::Ok(val) => val,
             Result::Err(err) => root::builtin::__panic__(message)

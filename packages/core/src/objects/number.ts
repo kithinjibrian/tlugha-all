@@ -37,24 +37,22 @@ let m: Record<string, any> = {
 export class NumberType extends Type<number> {
     constructor(value: number) {
         super("number", value, {
-            add: (obj: Type<number>) => new NumberType(value + obj.getValue()),
-            minus: (obj: Type<number>) => new NumberType(value - obj.getValue()),
-            multiply: (obj: Type<number>) => new NumberType(value * obj.getValue()),
-            divide: (obj: Type<number>) => {
+            add: async (env: Env, obj: Type<number>) => new NumberType(value + obj.getValue()),
+            minus: async (env: Env, obj: Type<number>) => new NumberType(value - obj.getValue()),
+            multiply: async (env: Env, obj: Type<number>) => new NumberType(value * obj.getValue()),
+            divide: async (env: Env, obj: Type<number>) => {
                 const divisor = obj.getValue();
                 if (divisor === 0) throw new Error("Cannot divide by zero");
                 return new NumberType(value / divisor);
             },
-            inc: () => new NumberType(value++),
-            dec: () => new NumberType(value--),
-            modulo: (obj: Type<number>) => new NumberType(value % obj.getValue()),
-            lt: (obj: Type<number>) => new BoolType(value < obj.getValue()),
-            gt: (obj: Type<number>) => new BoolType(value > obj.getValue()),
-            lte: (obj: Type<number>) => new BoolType(value <= obj.getValue()),
-            gte: (obj: Type<number>) => new BoolType(value >= obj.getValue()),
-            eq: (obj: Type<number>) => new BoolType(value === obj.getValue()),
-            neq: (obj: Type<number>) => new BoolType(value !== obj.getValue()),
-            get: (env: Env, prop: Type<string>, args: Type<any>[]) => {
+            modulo: async (env: Env, obj: Type<number>) => new NumberType(value % obj.getValue()),
+            lt: async (env: Env, obj: Type<number>) => new BoolType(value < obj.getValue()),
+            gt: async (env: Env, obj: Type<number>) => new BoolType(value > obj.getValue()),
+            lte: async (env: Env, obj: Type<number>) => new BoolType(value <= obj.getValue()),
+            gte: async (env: Env, obj: Type<number>) => new BoolType(value >= obj.getValue()),
+            eq: async (env: Env, obj: Type<number>) => new BoolType(value === obj.getValue()),
+            neq: async (env: Env, obj: Type<number>) => new BoolType(value !== obj.getValue()),
+            get: async (env: Env, prop: Type<string>, args: Type<any>[]) => {
                 const _prop = prop.getValue();
                 const methods = ["sqrt", "abs", "ceil", "floor", "round", "trunc", "pow"];
 

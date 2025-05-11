@@ -14,7 +14,7 @@ enum Value {
 impl Value {
     fun __index__(self: Self, key: string): unit {
         match(self) {
-            Value::Object(obj) => obj.get(key).unwrap().unwrap(),
+            Value::Object(obj) => obj.get(key),
             Value::Array(arr) => arr.at(key.parse().unwrap()).unwrap().unwrap(),
             Value::String(s) => s.at(key.parse().unwrap()).unwrap(),
             _ => panic("{} can't be indexed.", self)

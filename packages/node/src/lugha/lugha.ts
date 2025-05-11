@@ -33,6 +33,7 @@ export async function lugha({
         let ast = parser.parse();
 
         const engine = new EngineNode(
+            file_path,
             rd,
             wd,
             ast,
