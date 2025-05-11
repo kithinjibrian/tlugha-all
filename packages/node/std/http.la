@@ -67,10 +67,8 @@ impl Server {
     fun handle_req(self: Self, req: Req, res: Res): unit {
         let mut a = 0;
 
-        while(a < self.routes.length()) {
-            if(self.routes[a].method == req.method &&
-                self.routes[a].path == req.path
-            ) {                
+        while a < self.routes.length() {
+            if self.routes[a].method == req.method && self.routes[a].path == req.path {                
                 let mut i = 0;
                 
                 const next = fun (): unit -> {

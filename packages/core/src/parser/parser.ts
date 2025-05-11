@@ -64,7 +64,8 @@ interface Args {
     statement: boolean,
     no_init: boolean,
     constant: boolean,
-    ignore_type: boolean
+    ignore_type: boolean,
+    skip_struct_init: boolean
 }
 
 export class Parser {
@@ -527,19 +528,9 @@ export class Parser {
             );
         }
 
-        // Expect opening parenthesis
-        if (!this.match(TokenType.LeftParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_PAREN,
-                "Expected '(' before the variable in the for loop.",
-                "Ensure the expression inside the for loop is enclosed in parentheses.",
-                `Found token: '${this.peek().value}' instead of '('`,
-                ["'('"],
-                "'for (let a in 1..5) { ... }'"
-            );
-        }
+        if (this.match(TokenType.LeftParen)) { }
 
-        const variable = this.variable_statement(args);
+        const variable = this.identifier(args);
 
         if (!this.match(TokenType.In)) {
             this.error(
@@ -548,18 +539,12 @@ export class Parser {
             );
         }
 
-        const expression = this.expression(args);
+        const expression = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
 
-        if (!this.match(TokenType.RightParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                "Expected ')' after the expression in the for loop.",
-                "Ensure the expression is closed with a ')' after the condition.",
-                `Found token: '${this.peek().value}' instead of ')'`,
-                [")"],
-                "'for (let a in 1..5) { ... }'"
-            );
-        }
+        if (this.match(TokenType.RightParen)) { }
 
         // Parse the body of the while loop
         const body = this.block(args);
@@ -588,31 +573,16 @@ export class Parser {
         }
 
         // Expect opening parenthesis
-        if (!this.match(TokenType.LeftParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_PAREN,
-                "Expected '(' before the expression in the while loop.",
-                "Ensure the expression inside the while loop is enclosed in parentheses.",
-                `Found token: '${this.peek().value}' instead of '('`,
-                ["'('"],
-                "'while (condition) { ... }'"
-            );
-        }
+        if (this.match(TokenType.LeftParen)) { }
 
         // Parse the loop expression
-        let expression = this.expression(args);
+        let expression = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
 
         // Expect closing parenthesis
-        if (!this.match(TokenType.RightParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                "Expected ')' after the expression in the while loop.",
-                "Ensure the expression is closed with a ')' after the condition.",
-                `Found token: '${this.peek().value}' instead of ')'`,
-                [")"],
-                "'while (condition) { ... }'"
-            );
-        }
+        if (this.match(TokenType.RightParen)) { }
 
         // Parse the body of the while loop
         const body = this.block(args);
@@ -826,29 +796,14 @@ export class Parser {
             return this.if_let_expression(args);
         }
 
-        if (!this.match(TokenType.LeftParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_PAREN,
-                "Expected '(' after 'if'.",
-                "The condition of an 'if' statement must be enclosed in parentheses.",
-                `Found token: '${this.peek().value}' instead of '('.`,
-                ["'('"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.LeftParen)) { }
 
-        let condition = this.expression(args);
+        let condition = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
 
-        if (!this.match(TokenType.RightParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                "Expected ')' after the condition in 'if' statement.",
-                "You must close the condition expression with a right parenthesis ')'.",
-                `Found token: '${this.peek().value}' instead of ')'.`,
-                [")"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.RightParen)) { }
 
         const consequent = this.block(args);
 
@@ -1598,7 +1553,7 @@ export class Parser {
                 return this.match_expression(args);
             case TokenType.Identifier: {
                 const iden = this.scoped_identifier(args);
-                if (this.peek().type == TokenType.LeftBrace) {
+                if (!args.skip_struct_init && this.peek().type == TokenType.LeftBrace) {
                     const fields = this.struct_initializer(args);
                     return new StructInitNode(token, iden, fields);
                 }
@@ -1924,29 +1879,14 @@ export class Parser {
             );
         }
 
-        if (!this.match(TokenType.LeftParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_PAREN,
-                "Expected '(' after 'if'.",
-                "The condition of an 'if' statement must be enclosed in parentheses.",
-                `Found token: '${this.peek().value}' instead of '('.`,
-                ["'('"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.LeftParen)) { }
 
-        const exppression = this.expression(args);
+        const exppression = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
 
-        if (!this.match(TokenType.RightParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                "Expected ')' after the condition in 'if' statement.",
-                "You must close the condition expression with a right parenthesis ')'.",
-                `Found token: '${this.peek().value}' instead of ')'.`,
-                [")"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.RightParen)) { }
 
         const consequent = this.block(args);
 
@@ -1971,29 +1911,14 @@ export class Parser {
             );
         }
 
-        if (!this.match(TokenType.LeftParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_PAREN,
-                "Expected '(' after 'if'.",
-                "The condition of an 'if' statement must be enclosed in parentheses.",
-                `Found token: '${this.peek().value}' instead of '('.`,
-                ["'('"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.LeftParen)) { }
 
-        const expression = this.expression(args);
+        const expression = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
 
-        if (!this.match(TokenType.RightParen)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                "Expected ')' after the condition in 'if' statement.",
-                "You must close the condition expression with a right parenthesis ')'.",
-                `Found token: '${this.peek().value}' instead of ')'.`,
-                [")"],
-                "'if (x > 0) { ... }'"
-            );
-        }
+        if (this.match(TokenType.RightParen)) { }
 
         const body: MatchArmNode[] = [];
 

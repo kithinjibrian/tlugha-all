@@ -1,5 +1,8 @@
-use std::shell::{ run };
+import json;
 
-fun main(): string {
-    10
+use json::{ parse };
+use std::io::{ print };
+
+fun main(): number {
+    parse("[10,20,30]")
 }

@@ -1112,7 +1112,7 @@ export class Engine implements ASTVisitor {
         for (const value of expression) {
             const new_frame = new Frame(frame);
 
-            new_frame.define(node.variable.variables.identifier.name, value);
+            new_frame.define(node.variable.name, value);
 
             await this.visit(node.body, {
                 frame: new_frame,

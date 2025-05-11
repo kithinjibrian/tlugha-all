@@ -160,7 +160,7 @@ export class ForNode extends ASTNodeBase {
 
     constructor(
         public token: Token | null,
-        public variable: VariableStatementNode,
+        public variable: IdentifierNode,
         public expression: ASTNode,
         public body: ASTNode
     ) {

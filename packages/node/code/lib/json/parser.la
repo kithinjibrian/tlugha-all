@@ -38,7 +38,7 @@ impl Parser {
 
     fun check(self: Self, token_type: TokenType): bool {
         if let Result::Ok(token) = (self.peek()) {
-            if(token.token_type == token_type) {
+            if token.token_type == token_type {
                 return true;
             }
         }
@@ -47,8 +47,8 @@ impl Parser {
     }
 
     fun match_token(self: Self, ...types: Array<TokenType>): bool {
-        for(let t in types) {
-            if(self.check(t)) {
+        for t in types {
+            if self.check(t) {
                 self.advance();
                 return true;
             }
@@ -63,7 +63,7 @@ impl Parser {
 
     fun value(self: Self): Result<AST, string> {
         return if let Result::Ok(token) = (self.peek()) {
-            match(token.token_type) {
+            match token.token_type {
                 TokenType::LeftBrace => self.object(),
                 TokenType::LeftBracket => self.array(),
                 TokenType::Null => {
@@ -95,29 +95,29 @@ impl Parser {
         let properties: Array<AST> = [];
         self.advance();
 
-        while(true) {
+        while true {
             let key = if let Result::Ok(token) = (self.advance()) {
-                match(token.token_type) {
+                match token.token_type {
                     TokenType::String(s) => s,
                     _ => return Result::Err("Expected a string key")
                 }
             };
 
-            if(self.match_token(TokenType::Colon) != true) {
+            if self.match_token(TokenType::Colon) != true {
                 return Result::Err("Expected ':'");
             }
 
-            match(self.value()) {
+            match self.value() {
                 Result::Ok(value) => properties.push(AST::Property(key, value)),
                 Result::Err(err) => return Result::Err(err);
             }
 
-            if(self.match_token(TokenType::Comma) != true) {
+            if self.match_token(TokenType::Comma) != true {
                 break;
             }
         }
 
-        if(self.match_token(TokenType::RightBrace) != true) {
+        if self.match_token(TokenType::RightBrace) != true {
             return Result::Err("Expected '}'");
         }
 
@@ -128,18 +128,18 @@ impl Parser {
         let elements: Array<AST> = [];
         self.advance();
 
-        while(true) {      
-            match(self.value()) {
+        while true {      
+            match self.value() {
                 Result::Ok(val) => elements.push(val),
                 Result::Err(err) => return Result::Err(err);
             }
 
-            if(self.match_token(TokenType::Comma) != true) {
+            if self.match_token(TokenType::Comma) != true {
                 break;
             }
         }
 
-        if(self.match_token(TokenType::RightBracket) != true) {
+        if self.match_token(TokenType::RightBracket) != true {
             return Result::Err("Expected ']'");
         }
 

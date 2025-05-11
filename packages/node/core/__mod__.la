@@ -5,14 +5,14 @@ enum Result<T, E> {
 
 impl Result {
     fun unwrap(self: Self): T {
-        match(self) {
+        match self {
             Result::Ok(val) => val,
             Result::Err(err) => root::builtin::__panic__("called `Result::unwrap()` on an `Err` value: {}".format(err))
         } 
     }
 
     fun expect(self: Self, message: string): unit {
-        match(self) {
+        match self {
             Result::Ok(val) => val,
             Result::Err(err) => root::builtin::__panic__(message)
         }
@@ -26,14 +26,14 @@ enum Option<T> {
 
 impl Option {
     fun unwrap(self: Self): unit {
-        match(self) {
+        match self {
             Option::Some(val) => val,
             Option::None => root::builtin::__panic__("called `Option::unwrap()` on an `None` value")
         } 
     }
 
     fun expect(self: Self, message: string): unit {
-        match(self) {
+        match self {
             Result::Ok(val) => val,
             Result::Err(err) => root::builtin::__panic__(message)
         }

@@ -16,7 +16,7 @@ impl Regex {
     }
 
     fun is_match(self: Self, str: string): bool {
-        return match(root::builtin::__re_test__(self.regex, str)) {
+        return match root::builtin::__re_test__(self.regex, str) {
             Result::Ok(t) => t,
             Result::Err(f) => f,
         };

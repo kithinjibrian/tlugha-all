@@ -1,5 +1,5 @@
 fun print<T>(format: string, ...rest: (T)): unit {
-    if(rest.is_empty()) {
+    if rest.is_empty() {
         root::builtin::__print__(format);
         return;
     }

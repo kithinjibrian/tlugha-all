@@ -27,7 +27,7 @@ struct Token {
 }
 
 fun one_char(c: string): TokenType {
-    return match(c) {
+    return match c {
         "," => TokenType::Comma,
         ":" => TokenType::Colon,
         "{" => TokenType::LeftBrace,
@@ -57,7 +57,7 @@ impl Lexer {
     }
 
     fun peek(self: Self, offset: number): string {
-        return match(self.input.at(self.position + offset)) {
+        return match self.input.at(self.position + offset) {
             Result::Ok(y) => y,
             Result::Err(z) => r"\0"
         };
@@ -67,7 +67,7 @@ impl Lexer {
         let char = self.peek(0);
         self.position += 1;
 
-        if(char == '\n') {
+        if char == '\n' {
             self.line += 1;
             self.column = 1;
         } else {
@@ -78,7 +78,7 @@ impl Lexer {
     }
 
     fun get_current_line(self: Self): string {
-        return match(self.input.at(self.line - 1)) {
+        return match self.input.at(self.line - 1) {
             Result::Ok(y) => y,
             Result::Err(z) => ""
         };
@@ -86,7 +86,7 @@ impl Lexer {
 
     fun skip_whitespace(self: Self): unit {
         let re = Regex::new(r"\s");
-        while (re.is_match(self.peek(0))) {
+        while re.is_match(self.peek(0)) {
             self.advance();
         }
     }
@@ -122,13 +122,13 @@ impl Lexer {
         let start_column = self.column;
         let current_line_str = self.get_current_line();
 
-        while(re.is_match(self.peek(0)) && self.peek(0) != r"\0") {
+        while re.is_match(self.peek(0)) && self.peek(0) != r"\0" {
             value.push(self.advance());
         }
 
-        if(self.peek(0) == ".") {
+        if self.peek(0) == "." {
             value.push(self.advance());
-            while(re.is_match(self.peek(0))) {
+            while re.is_match(self.peek(0)) {
                 value.push(self.advance());
             }
         }
@@ -150,7 +150,7 @@ impl Lexer {
 
         let re = Regex::new(r"[a-zA-Z0-9]");
 
-        while(re.is_match(self.peek(0)) && self.peek(0) != r"\0") {
+        while re.is_match(self.peek(0)) && self.peek(0) != r"\0" {
             value.push(self.advance());
         }
 
@@ -163,7 +163,7 @@ impl Lexer {
         };
  
         Result::Ok(
-            match(keywords.get(iden)) {
+            match keywords.get(iden) {
                 Result::Ok(k) => Token {
                     token_type: k,
                     line: self.line,
@@ -186,13 +186,13 @@ impl Lexer {
         let start_column = self.column;
         let current_line_str = self.get_current_line();
 
-        if(quote == '"') {
+        if quote == '"' {
             self.advance();
 
-            while(self.peek(0) != quote && self.peek(0) != r"\0") {
+            while self.peek(0) != quote && self.peek(0) != r"\0" {
                 let ch = self.peek(0);
 
-                if(ch == "\\") {
+                if ch == "\\" {
                     self.advance();
                     let escape_char = self.advance();
                     let escape_seqs = map {
@@ -203,7 +203,7 @@ impl Lexer {
                         "'": "'"
                     };
 
-                    match(escape_seqs.get(escape_char)) {
+                    match escape_seqs.get(escape_char) {
                         Result::Ok(c) => value.push(c),
                         Result::Err(e) => value.push(escape_char)
                     }
@@ -228,7 +228,7 @@ impl Lexer {
     fun get_next_token(self: Self): Result<Token, string> {
         self.skip_whitespace();
 
-        if(self.position >= self.input.length()) {
+        if self.position >= self.input.length() {
             return Result::Ok(
                 Token {
                     token_type: TokenType::EOF,
@@ -244,15 +244,15 @@ impl Lexer {
         let num = Regex::new(r"\d");
         let alpha = Regex::new(r"[a-zA-Z_]");
 
-        if(num.is_match(char)) {
+        if num.is_match(char) {
             return self.read_number();
         }
 
-        if(alpha.is_match(char)) {
+        if alpha.is_match(char) {
             return self.read_identifier();
         }
 
-        if(char == '"') {
+        if char == '"' {
             return self.read_string();
         }
 
@@ -262,13 +262,13 @@ impl Lexer {
     fun tokenize(self: Self): Result<Array<Token>, string> {
         let tokens: Array<Token> = [];
 
-        while(true) {
-            match(self.get_next_token()) {
+        while true {
+            match self.get_next_token() {
                 Result::Ok(token) => {
                     let is_eof = token.token_type == TokenType::EOF;
                     tokens.push(token);
 
-                    if(is_eof) {
+                    if is_eof {
                         break;
                     }
                 },
