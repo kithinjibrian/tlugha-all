@@ -9,6 +9,7 @@ import { FS } from "../fs/fs";
 
 export class EngineBrowser extends Engine {
     constructor(
+        file: string,
         rd: string,
         wd: string,
         ast: ASTNode,
@@ -16,6 +17,7 @@ export class EngineBrowser extends Engine {
         lugha: Function
     ) {
         super(
+            file,
             rd,
             wd,
             ast,
