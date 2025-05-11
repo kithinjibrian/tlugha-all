@@ -4,5 +4,5 @@ use json::{ parse };
 use std::io::{ print };
 
 fun main(): number {
-    parse("[10,20,30]")
+    print("{}", builtin::__version__)
 }

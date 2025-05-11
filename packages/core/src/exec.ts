@@ -37,16 +37,7 @@ export const add_builtins = async (builtin: Record<string, Builtin>, { root, }: 
                 );
                 module.frame.define(key, inbuiltFunction);
             } else if (value.type == "variable") {
-                const inbuiltVariable = new VariableNode(
-                    null,
-                    new IdentifierNode(null, key),
-                    true,
-                    false,
-                    undefined,
-                    create_object(value.value)
-                );
-
-                module.frame.define(key, inbuiltVariable);
+                module.frame.define(key, create_object(value.value));
             }
         })
 }
