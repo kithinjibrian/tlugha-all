@@ -23,7 +23,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";
 
     constructor(
-        public std: string
+        public dir: string
     ) {
         super();
     }
@@ -42,12 +42,49 @@ class UploadBuiltins extends Extension<ASTVisitor> {
                 add_builtins(builtin, { root });
             },
             async ({ root }: { root: Module }) => {
-                if (!this.std) return;
+                let module;
+
+                let cache = Cache.get_instance();
+                const wd = `${this.dir}/core`;
+                const mod_path = `${wd}/__mod__.la`;
+
+                if (cache.has_mod(mod_path)) {
+                    module = cache.get_mod(mod_path);
+                    module.children.map(mod => root.children.push(mod))
+                } else {
+                    module = new Module("core");
+                }
+
+                root.add_submodule(module);
+
+                if (!cache.has_mod(mod_path)) {
+                    cache.add_mod(mod_path, module);
+
+                    try {
+                        ExtensionStore.get_instance().unregister("UploadBuiltins")
+
+                        await lugha({
+                            module,
+                            rd: this.dir,
+                            file: "__mod__.la",
+                            wd,
+                        })
+
+                        ExtensionStore.get_instance().register(new UploadBuiltins(this.dir))
+
+                        module.children.map(mod => root.children.push(mod))
+                    } catch (error) {
+                        throw error;
+                    }
+                }
+            },
+            async ({ root }: { root: Module }) => {
+                if (!this.dir) return;
 
                 let module;
 
                 let cache = Cache.get_instance();
-                const wd = `${this.std}/std`;
+                const wd = `${this.dir}/std`;
                 const mod_path = `${wd}/__mod__.la`;
 
                 if (cache.has_mod(mod_path)) {
@@ -66,12 +103,12 @@ class UploadBuiltins extends Extension<ASTVisitor> {
 
                         await lugha({
                             module,
-                            rd: this.std,
+                            rd: this.dir,
                             file: "__mod__.la",
                             wd
                         })
 
-                        ExtensionStore.get_instance().register(new UploadBuiltins(this.std))
+                        ExtensionStore.get_instance().register(new UploadBuiltins(this.dir))
 
                     } catch (error) {
                         throw error;

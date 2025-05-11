@@ -6,7 +6,6 @@ let std_init = false;
 
 (function () {
     if (std_init) {
-        console.log("popl");
         return;
     }
 
@@ -98,19 +97,10 @@ fun pow(a: number, b: number): number {
 `
     )
 
-    fs.writeFile("/app/std/option.la",
+    fs.writeFile("/app/std/err.la",
         `
-enum Option<V> {
-    Some(V),
-    None
-}
-`)
-
-    fs.writeFile("/app/std/result.la",
-        `
-enum Result<T, E> {
-    Ok(T),
-    Err(E)
+fun panic(err: string, ...rest: (string)): unit {
+    root::builtin::__panic__(err.format(...rest));
 }
 `)
 

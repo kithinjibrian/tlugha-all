@@ -19,13 +19,14 @@ export async function lugha({
     module: Module
 }): Promise<EngineBrowser> {
     const fs = FS.getInstance();
-    const code = fs.readFile(`${wd}/${file}`);
+    const filepath = `${wd}/${file}`
+    const code = fs.readFile(filepath);
 
     try {
-        let lexer = new Lexer(code);
+        let lexer = new Lexer(code, filepath);
         let tokens = lexer.tokenize();
 
-        let parser = new Parser(tokens);
+        let parser = new Parser(tokens, filepath);
         let ast = parser.parse();
 
         const engine = new EngineBrowser(
