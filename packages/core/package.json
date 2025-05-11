@@ -1,6 +1,6 @@
 {
     "name": "@kithinji/tlugha-core",
-    "version": "0.0.14",
+    "version": "0.0.15",
     "main": "./dist/main.js",
     "module": "./dist/main.mjs",
     "types": "./dist/main.d.ts",
