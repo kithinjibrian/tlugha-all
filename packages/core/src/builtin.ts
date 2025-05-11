@@ -96,7 +96,7 @@ ${args[0]}
             try {
                 const res = await axios.post(args[0], args[1], args[2]);
                 const { config, request, ...rest } = res;
-                return rest;
+                return JSON.stringify(rest);
             } catch (e: any) {
                 throw e;
             }

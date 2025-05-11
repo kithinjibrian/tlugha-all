@@ -319,7 +319,7 @@ export class Engine implements ASTVisitor {
             }
 
             if (ret || after.length > 0) {
-                const value = ret?.getValue();
+                const value = await ret?.str();
                 return after.length > 0 ? [value, ...after] : value;
             }
 

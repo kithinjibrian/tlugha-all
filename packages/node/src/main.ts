@@ -1,10 +1,11 @@
+import { Type } from "@kithinji/tlugha-core";
 import { exec } from "./types";
 
 export * from "./types";
 
 async function main() {
     try {
-        await exec({
+        return await exec({
             filepath: "code/src/app.la",
             config: {
                 call_main: true
@@ -17,5 +18,7 @@ async function main() {
 }
 
 if (require.main == module) {
-    main()
+    main().then(e => {
+        console.log(e)
+    })
 }

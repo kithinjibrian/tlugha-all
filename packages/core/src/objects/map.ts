@@ -33,7 +33,7 @@ export class MapType extends Type<Record<string, Type<any>>> {
                 }, {} as Record<string, any>);
             },
             str: async (env: Env, indentLevel = 0) => {
-                let result = "Map {\n";
+                let result = "map {\n";
                 const indent = "  ".repeat(indentLevel + 1);
                 const entries = Object.entries(value);
 
