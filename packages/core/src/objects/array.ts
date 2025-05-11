@@ -2,6 +2,7 @@ import {
     ArrayNode,
     ASTNode,
     BlockNode,
+    BooleanNode,
     Frame,
     FunctionDecNode,
     IdentifierNode,
@@ -27,6 +28,9 @@ let m: Record<string, any> = {
     },
     length(env: Env, value: any[]) {
         return new NumberNode(null, value.length);
+    },
+    is_empty(env: Env, value: any[]) {
+        return new BooleanNode(null, value.length === 0);
     },
     peek(env: Env, value: Type<any>[]) {
         return result(env.engine, value[value.length - 1], new StringType(`Can't peek an empty array`));
