@@ -217,7 +217,7 @@ export class Engine implements ASTVisitor {
                         rest.push(args[y]);
                     }
 
-                    value = new TupleType(rest)
+                    value = new ArrayType(rest)
                 } else if (i < args.length) {
                     value = args[i];
                 }
