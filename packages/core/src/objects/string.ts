@@ -586,7 +586,7 @@ class Engine implements ASTVisitor {
             );
         }
 
-        let formattedValue = await fieldValue.str();
+        let formattedValue = await fieldValue.str(this.env, 0);
 
         if (node.width !== undefined) {
             // Format the value according to width and alignment
