@@ -54,6 +54,12 @@ export const ErrorCodes = {
         EXPECTED_IMPORT_KEYWORD: "PAR046",
         EXPECTED_USE_KEYWORD: "PAR047",
         INVALID_MIX_SET_COMBO: "PAR048",
+        MISSING_FOR_KEYWORD: "PAR049",
+        MISSING_EQ_ARROW: "PAR050",
+        INVALID_EXPRESSION_POSITION: "PAR051",
+        MALFORMED_MAP_KEY: "PAR052",
+        EXPECTED_MAP_KEYWORD: "PAR053",
+        EXPECTED_SET_KEYWORD: "PAR054",
     },
     runtime: {
         UNDEFINED_SYMBOL: "RUN001",
@@ -68,6 +74,18 @@ export const ErrorCodes = {
         UNSUPPORTED_OPERATOR: "RUN010",
         UNDEFINED_VARIABLE: "RUN011",
         MISSING_MAIN: "RUN012",
+    },
+    string_lexer: {
+
+    },
+    string_parser: {
+        UNEXPECTED_END_OF_INPUT: "SPAR001",
+        EXPECTED_TEXT: "SPAR002",
+        EXPECTED_PLACEHOLDER: "SPAR003",
+
+    },
+    string_runtime: {
+
     },
 };
 

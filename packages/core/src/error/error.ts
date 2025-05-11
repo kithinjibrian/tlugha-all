@@ -8,12 +8,13 @@ export class TError extends Error {
     line: number;
     column: number;
     lineStr: string;
-    stage: "lexer" | "parser" | "runtime";
+    stage: "lexer" | "parser" | "runtime" | "stringparser";
     hint?: string;
     context?: string;
     expected?: string[];
     example?: string;
     pointer?: string;
+    message: string;
 
     constructor(params: {
         code: string;
@@ -21,20 +22,22 @@ export class TError extends Error {
         line: number;
         column: number;
         lineStr: string;
-        stage: "lexer" | "parser" | "runtime";
+        stage: "lexer" | "parser" | "runtime" | "stringparser";
+        file?: string;
         hint?: string;
         context?: string;
         expected?: string[];
         example?: string;
     }) {
-        const { code, reason, line, column, lineStr, stage, hint, context, expected, example } = params;
+        const { file, code, reason, line, column, lineStr, stage, hint, context, expected, example } = params;
 
         // Generate the pointer for where the error occurred
         const pointer = ' '.repeat(column - 1) + '^';
 
         // Build the detailed error message
         const message =
-            `[${getCategory(code)}:${code}] ${reason}
+            `${file ? `File: ${file}` : ''}
+[${getCategory(code)}:${code}] ${reason}
 --> line ${line}, column ${column}
 ${lineStr}
 ${pointer}
@@ -45,6 +48,7 @@ ${example ? `Example: ${example}` : ''}`;
 
         super(message);
 
+        this.message = message;
         this.name = `${stage.charAt(0).toUpperCase() + stage.slice(1)}Error`;
         this.code = code;
         this.reason = reason;

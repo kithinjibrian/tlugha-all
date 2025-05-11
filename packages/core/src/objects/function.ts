@@ -9,4 +9,8 @@ export class FunctionType extends Type<FunctionDecNode> {
             }
         });
     }
+
+    *[Symbol.iterator]() {
+        yield this;
+    }
 }

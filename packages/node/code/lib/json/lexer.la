@@ -1,0 +1,259 @@
+use std::re::{ Regex };
+use std::io::{ print };
+
+enum TokenType {
+    OP,
+    EOF,
+    Null,
+    True,
+    False,
+    Comma,
+    Colon,
+    LeftBrace,
+    RightBrace,
+    LeftBracket,
+    RightBracket,
+    Number(number),
+    String(string),
+    Identifier(string),
+}
+
+struct Token {
+    line: number;
+    column: number;
+    line_str: string;
+    token_type: TokenType;
+}
+
+fun one_char(c: string): TokenType {
+    return match(c) {
+        "," => TokenType::Comma,
+        ":" => TokenType::Colon,
+        "{" => TokenType::LeftBrace,
+        "}" => TokenType::RightBrace,
+        "[" => TokenType::LeftBracket,
+        "]" => TokenType::RightBracket,
+        _ => TokenType::OP
+    };
+}
+
+struct Lexer {
+    input: string;
+    mut line: number;
+    mut column: number;
+    mut position: number;
+}
+
+impl Lexer {
+    fun new(input: string): Lexer {
+        return Lexer {
+            input,
+            line: 1,
+            column: 1,
+            position: 0,
+        };
+    }
+
+    fun peek(self: Self, offset: number): string {
+        return match(self.input.at(self.position + offset)) {
+            Result::Ok(y) => y,
+            Result::Err(z) => r"\0"
+        };
+    }
+
+    fun advance(self: Self): string {
+        let char = self.peek(0);
+        self.position += 1;
+
+        if(char == '\n') {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        };
+
+        return char;
+    }
+
+    fun get_current_line(self: Self): string {
+        return match(self.input.at(self.line - 1)) {
+            Result::Ok(y) => y,
+            Result::Err(z) => ""
+        };
+    }
+
+    fun skip_whitespace(self: Self): unit {
+        let re = Regex::new(r"\s");
+        while (re.is_match(self.peek(0))) {
+            self.advance();
+        }
+    }
+
+    fun read_operator(self: Self): Result<Token, string> {
+        let start_column = self.column;
+        let current_line_str = self.get_current_line();
+
+        let c1 = self.peek(0);
+        let c2 = self.peek(1);
+        let c3 = self.peek(2);
+
+        let one_char_op = one_char(c1);
+        if let TokenType::OP = (one_char_op) { } else {
+            self.advance();
+            return Result::Ok(
+                Token {
+                    token_type: one_char_op,
+                    line: self.line,
+                    column: start_column,
+                    line_str: current_line_str
+                }
+            );
+        };
+
+        return Result::Err("Invalid character {}".format(c1));
+    }
+
+    fun read_number(self: Self): Result<Token, string> {
+        let value = [];
+        let re = Regex::new(r"\d");
+        let start_column = self.column;
+        let current_line_str = self.get_current_line();
+
+        while(re.is_match(self.peek(0)) && self.peek(0) != r"\0") {
+            value.push(self.advance());
+        }
+
+        if(self.peek(0) == ".") {
+            value.push(self.advance());
+            while(re.is_match(self.peek(0))) {
+                value.push(self.advance());
+            }
+        }
+
+        Result::Ok(
+            Token {
+                token_type: TokenType::Number(value.join("")),
+                line: self.line,
+                column: start_column,
+                line_str: current_line_str     
+            }
+        )
+    }
+
+    fun read_identifier(self: Self): Result<Token, string> {
+        let value = [];
+        let start_column = self.column;
+        let current_line_str = self.get_current_line();
+
+        let re = Regex::new(r"[a-zA-Z0-9]");
+
+        while(re.is_match(self.peek(0)) && self.peek(0) != r"\0") {
+            value.push(self.advance());
+        }
+
+        let iden = value.join("");
+
+        const keywords = map {
+            "null": TokenType::Null,
+            "true": TokenType::True,
+            "false": TokenType::False
+        };
+ 
+        Result::Ok(
+            match(keywords.get(iden)) {
+                Result::Ok(k) => Token {
+                    token_type: k,
+                    line: self.line,
+                    column: start_column,
+                    line_str: current_line_str
+                },
+                Result::Err(e) => Token {
+                    token_type: TokenType::Identifier(iden),
+                    line: self.line,
+                    column: start_column,
+                    line_str: current_line_str
+                }
+            }
+        )
+    }
+
+    fun read_string(self: Self): Result<Token, string> {
+        let value = [];
+        let quote = self.peek(0);
+        let start_column = self.column;
+        let current_line_str = self.get_current_line();
+
+        if(quote == '"') {
+            self.advance();
+
+            while(self.peek(0) != quote) {
+                value.push(self.advance());
+            }
+        };
+
+        self.advance();
+
+        return Result::Ok(
+            Token {
+                token_type: TokenType::String(value.join("")),
+                line: self.line,
+                column: start_column,
+                line_str: current_line_str
+            }
+        );
+    }
+
+    fun get_next_token(self: Self): Result<Token, string> {
+        self.skip_whitespace();
+
+        if(self.position >= self.input.length()) {
+            return Result::Ok(
+                Token {
+                    token_type: TokenType::EOF,
+                    line: self.line,
+                    column: self.column,
+                    line_str: ""
+                }
+            );
+        }
+
+        const char = self.peek(0);
+
+        let num = Regex::new(r"\d");
+        let alpha = Regex::new(r"[a-zA-Z_]");
+
+        if(num.is_match(char)) {
+            return self.read_number();
+        }
+
+        if(alpha.is_match(char)) {
+            return self.read_identifier();
+        }
+
+        if(char == '"') {
+            return self.read_string();
+        }
+
+        self.read_operator()
+    }
+
+    fun tokenize(self: Self): Result<Array<Token>, string> {
+        let tokens: Array<Token> = [];
+
+        while(true) {
+            match(self.get_next_token()) {
+                Result::Ok(token) => {
+                    let is_eof = token.token_type == TokenType::EOF;
+                    tokens.push(token);
+
+                    if(is_eof) {
+                        break;
+                    }
+                },
+                Result::Err(e) => return Result::Err(e)
+            }
+        }
+
+        Result::Ok(tokens)
+    }
+}

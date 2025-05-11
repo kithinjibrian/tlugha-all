@@ -1,4 +1,7 @@
 import { ErrorCodes, TError } from "../error/error";
+import { Panic } from "../error/panic";
+import { EnumType } from "../objects/enum";
+import { RangeType } from "../objects/range";
 import {
     ArrayNode,
     ASTNode,
@@ -7,34 +10,48 @@ import {
     BlockNode,
     BooleanNode,
     CallExpressionNode,
+    EnumModule,
     EnumNode,
+    EnumPatternNode,
     EnumVariantNode,
     ExpressionStatementNode,
     FieldNode,
+    ForNode,
     FunctionDecNode,
     IdentifierNode,
     IfElseNode,
+    IfLetNode,
+    ImplNode,
     LambdaNode,
     MapNode,
+    MatchNode,
     MemberDecNode,
     MemberExpressionNode,
     ModuleNode,
     NumberNode,
     ParameterNode,
     ProgramNode,
+    RangeNode,
+    result,
     ReturnNode,
     ScopedIdentifierNode,
     SetNode,
     SourceElementsNode,
+    SpreadElementNode,
     StringNode,
+    StructAlreadyInitNode,
     StructInitNode,
+    StructModule,
     StructNode,
+    TaggedNode,
     TupleNode,
     TupleVariantNode,
+    UnitType,
     UseNode,
     VariableNode,
     VariableStatementNode,
-    WhileNode
+    WhileNode,
+    WildcardNode
 } from "../types";
 
 import { Frame, Module } from "../types";
@@ -207,28 +224,51 @@ export class Engine implements ASTVisitor {
                 : args.map(i => i.getValue());
 
             if (inbuilt.has_callback) {
-                filtered.unshift(fn.module); // comeback here
                 filtered.unshift(this);
             }
 
             let value;
             if (inbuilt.async) {
                 try {
-                    value = await inbuilt.exec(filtered);
+                    value = new EnumType("Ok",
+                        new TupleType([
+                            create_object(await inbuilt.exec(filtered))
+                        ])
+                    )
                 } catch (e: any) {
-                    value = e.message
+                    value = new EnumType("Err",
+                        new TupleType([
+                            new StringType(e.message)
+                        ])
+                    )
                 }
             } else {
-                value = inbuilt.exec(filtered)
+                try {
+                    value = new EnumType("Ok",
+                        new TupleType([
+                            create_object(inbuilt.exec(filtered))
+                        ])
+                    )
+                } catch (e: any) {
+                    if (e instanceof Panic) {
+                        throw e;
+                    }
+
+                    value = new EnumType("Err",
+                        new TupleType([
+                            new StringType(e.message)
+                        ])
+                    )
+                }
             }
 
-            if (value)
-                frame.stack.push(create_object(value))
+            if (value !== undefined && value !== null)
+                frame.stack.push(value)
         } else {
 
             await this.visit(fn.body, { frame: new_frame, module: fn.module })
 
-            if (!(fn.body instanceof BlockNode)) {
+            if (!new_frame.return_value && new_frame.stack.length > 0) {
                 frame.stack.push(new_frame.stack.pop());
                 return;
             }
@@ -304,9 +344,11 @@ export class Engine implements ASTVisitor {
 
     async visitExpressionStatement(
         node: ExpressionStatementNode,
-        args?: Record<string, any>
+        { frame, module }: { frame: Frame, module: Module }
     ) {
-        await this.visit(node.expression, args);
+        await this.visit(node.expression, { frame, module });
+        frame.stack.pop();
+        frame.stack.push(new UnitType());
     }
 
     async visitModule(
@@ -331,7 +373,15 @@ export class Engine implements ASTVisitor {
     ) {
         const self = this;
         function resolveModule(path: string[]): Module | undefined {
-            let mod = self.root.children.find(m => m.name === path[0]);
+            let mod, start = 1;
+            if (path[0] == "super") {
+                if (module.parent) {
+                    start = 2;
+                    mod = module.parent.children.find(m => m.name === path[1]);
+                }
+            } else
+                mod = self.root.children.find(m => m.name === path[0]);
+
             if (!mod) {
                 self.error(
                     node,
@@ -345,7 +395,7 @@ export class Engine implements ASTVisitor {
                 throw new Error("");
             }
 
-            for (let i = 1; i < path.length; i++) {
+            for (let i = start; i < path.length; i++) {
                 mod = mod.children.find(m => m.name === path[i]);
                 if (!mod) {
                     self.error(
@@ -433,6 +483,7 @@ export class Engine implements ASTVisitor {
         for (const n of node.body) {
             await this.visit(n, { frame: new_frame, module });
 
+
             if (
                 new_frame.return_flag ||
                 new_frame.break_flag ||
@@ -442,10 +493,28 @@ export class Engine implements ASTVisitor {
             }
         }
 
+
+        if (!new_frame.return_flag && new_frame.stack.length > 0) {
+            const last_value = new_frame.stack[new_frame.stack.length - 1];
+            frame.stack.push(last_value);
+        }
+
         frame.continue_flag = new_frame.continue_flag;
         frame.break_flag = new_frame.break_flag;
         frame.return_flag = new_frame.return_flag;
         frame.return_value = new_frame.return_value;
+    }
+
+    async visitSpreadElement(
+        node: SpreadElementNode,
+        { frame, module }: { frame: Frame; module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        const spread = frame.stack.pop();
+
+        for (const value of spread) {
+            frame.stack.push(value);
+        }
     }
 
     async visitCallExpression(
@@ -492,8 +561,9 @@ export class Engine implements ASTVisitor {
                 nd instanceof LambdaType
             ) {
                 await this.execute_function(nd.getValue(), evaluatedArgs, frame);
-            } else if (nd instanceof TupleVariantNode) {
-                frame.stack.push(new TupleType(evaluatedArgs));
+            } else if (nd instanceof TaggedNode) {
+                const _enum = new EnumType(nd.name, new TupleType(evaluatedArgs), nd.members);
+                frame.stack.push(_enum);
             } else {
                 this.error(
                     node,
@@ -558,7 +628,12 @@ export class Engine implements ASTVisitor {
     ) {
         const { object, property } = await this.get_object(node, { frame, module });
 
-        const value = object.get(property, args);
+        const value = await object.get({
+            engine: this,
+            frame,
+            module
+        }, property, args);
+
         if (!value) {
             this.error(
                 node,
@@ -608,6 +683,7 @@ export class Engine implements ASTVisitor {
         await this.visit(node.condition, { frame, module });
         const condition = frame.stack.pop() as Type<any>;
 
+
         if (condition.getValue()) {
             await this.visit(node.consequent, { frame, module });
         } else {
@@ -627,7 +703,11 @@ export class Engine implements ASTVisitor {
             object = o.object;
             property = o.property;
 
-            const value = object.get(property, []);
+            const value = await object.get({
+                engine: this,
+                frame,
+                module
+            }, property, []);
             if (!value) {
                 this.error(
                     node.left,
@@ -723,6 +803,33 @@ export class Engine implements ASTVisitor {
         frame.stack.push(result);
     }
 
+    async visitRangeExpression(
+        node: RangeNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let start: any = null;
+        let end: any = null;
+
+        if (node.start) {
+            await this.visit(node.start, { frame, module });
+            start = frame.stack.pop();
+        } else {
+            start = new NumberType(0);
+        }
+
+        if (node.end) {
+            await this.visit(node.end, { frame, module });
+            end = frame.stack.pop();
+        } else {
+            end = new NumberType(Infinity);
+        }
+
+        if (start instanceof NumberType && end instanceof NumberType) {
+            const range = new RangeType(start, end, node.is_inclusive);
+            frame.stack.push(range);
+        }
+    }
+
     async visitBinaryOp(
         node: BinaryOpNode,
         { frame, module }: { frame: Frame, module: Module }
@@ -775,8 +882,14 @@ export class Engine implements ASTVisitor {
             case "<":
                 result = left.lt(right);
                 break;
+            case "<=":
+                result = left.lte(right);
+                break;
             case ">":
                 result = left.gt(right);
+                break;
+            case ">=":
+                result = left.gte(right);
                 break;
             case "==":
                 result = left.eq(right);
@@ -908,10 +1021,18 @@ export class Engine implements ASTVisitor {
             symbol instanceof ParameterNode
         ) {
             frame.stack.push(symbol.value);
-        } else if (
-            symbol instanceof StructNode ||
-            symbol instanceof TupleVariantNode
-        ) {
+        } else if (symbol instanceof StructNode) {
+            frame.stack.push(symbol);
+        } else if (symbol instanceof TaggedNode) {
+            if (symbol.body instanceof NumberNode) {
+                await this.visit(symbol.body, { frame, module });
+                frame.stack.push(new EnumType(symbol.name, frame.stack.pop(), symbol.members))
+                return;
+            } else if (symbol.body instanceof StructNode) {
+                frame.stack.push(symbol.body)
+                return;
+            }
+
             frame.stack.push(symbol);
         } else if (symbol instanceof Type) {
             frame.stack.push(symbol);
@@ -928,11 +1049,62 @@ export class Engine implements ASTVisitor {
     ) {
         const symbol = frame.get(node.name);
 
+        if (!symbol) {
+            const mod = module.children.find(n => n.name == node.name);
+            if (mod) {
+                frame.stack.push(mod);
+            }
+        }
+
         if (symbol instanceof VariableNode ||
             symbol instanceof ParameterNode
         ) {
             frame.stack.push(symbol.value);
+        } else if (symbol instanceof StructNode) {
+            frame.stack.push(symbol);
         }
+    }
+
+    async visitFor(
+        node: ForNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        let expression = frame.stack.pop() as Type<any>;
+
+        for (const value of expression) {
+            const new_frame = new Frame(frame);
+
+            node.variable.variables.value = value;
+
+            new_frame.define(
+                node.variable.variables.identifier.name,
+                node.variable.variables
+            );
+
+            await this.visit(node.body, {
+                frame: new_frame,
+                module,
+                name: "for"
+            });
+
+            if (new_frame.break_flag) {
+                frame.break_flag = false;
+                break;
+            }
+
+            if (new_frame.continue_flag) {
+                frame.break_flag = false;
+                break;
+            }
+
+            if (new_frame.return_flag) {
+                frame.return_flag = new_frame.return_flag;
+                frame.return_value = new_frame.return_value
+                break;
+            }
+        }
+
     }
 
     async visitWhile(
@@ -978,7 +1150,10 @@ export class Engine implements ASTVisitor {
         frame.return_flag = true;
     }
 
-    async visitBreak(node: ASTNode, { frame }: { frame: Frame }) {
+    async visitBreak(
+        node: ASTNode,
+        { frame }: { frame: Frame }
+    ) {
         frame.break_flag = true;
     }
 
@@ -990,59 +1165,135 @@ export class Engine implements ASTVisitor {
         node: EnumNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        const newModule = new Module(node.name);
+        const newModule = new EnumModule(node.name);
         const newFrame = newModule.frame;
         module.add_submodule(newModule);
 
-        this.enum = 0;
+        let enum_counter = 0;
 
         for (const src of node.body) {
-            await this.visit(src, { frame: newFrame });
-        }
+            await this.visit(src, { frame: newFrame, enum_counter });
 
-        this.enum = 0;
+            if (!src.value)
+                enum_counter++
+        }
     }
 
     async visitEnumVariant(
         node: EnumVariantNode,
+        { frame, module, enum_counter }: { frame: Frame, module: Module, enum_counter: number }
+    ) {
+        let variant = node.value ?? new NumberNode(null, enum_counter);
+        frame.define(node.name, new TaggedNode(null, node.name, variant));
+    }
+
+    async visitImpl(
+        node: ImplNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        let value = node.value ?? new NumberType(this.enum);
+        await this.visit(node.iden, { frame, module });
+        const obj = frame.stack.pop();
 
-        if (!node.value) {
-            this.enum++
+        if (obj instanceof StructNode) {
+            await this.visitImplStruct(node, obj, { frame, module });
+        } else if (obj instanceof EnumModule) {
+            await this.visitImplEnum(node, obj, { frame, module });
+        }
+    }
+
+    async visitImplStruct(
+        impl_node: ImplNode,
+        struct_node: StructNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        // should revisit. members should capture impl environ
+        const struct_mod = struct_node.module
+
+        for (const src of impl_node.body) {
+            if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
+                src.frame = struct_mod.frame;
+                src.module = struct_mod;
+                struct_mod.frame.define(src.identifier.name, src);
+            } else if (src instanceof MemberDecNode) {
+                src.frame = struct_mod.frame;
+                src.module = module;
+            }
+
+            struct_node.body.map(n => {
+                if (n instanceof FieldNode) {
+                    return n.field.name
+                } else if (n instanceof FunctionDecNode) {
+                    return n.identifier.name
+                }
+            })
+                .map(name => {
+                    if (name == src.identifier.name) {
+                        this.error(
+                            src,
+                            "DUPLICATE_FIELDS",
+                            `A field with this name already exist in struct ${struct_node.name}`
+                        )
+                    }
+                })
+
+            struct_node.body.push(src)
+        }
+    }
+
+    async visitImplEnum(
+        impl_node: ImplNode,
+        enum_mod: EnumModule,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        for (let [key, value] of enum_mod.frame.symbol_table.entries()) {
+            if (value instanceof TaggedNode) {
+                for (const src of impl_node.body) {
+                    src.frame = frame;
+                    src.module = module;
+
+                    const duplicate = value.members.some(
+                        v => v.identifier.name === src.identifier.name
+                    );
+
+                    if (duplicate) {
+                        this.error(
+                            src,
+                            "DUPLICATE_FIELDS",
+                            `A field with this name already exists in struct ${value.name}`
+                        );
+                    }
+
+                    if (src instanceof MemberDecNode) {
+                        value.members.push(src);
+                    }
+                }
+            }
         }
 
-        frame.define(node.name, value);
+        for (const src of impl_node.body) {
+            if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
+                enum_mod.frame.define(src.identifier.name, src);
+            }
+        }
     }
 
     async visitStruct(
         node: StructNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        const newModule = new Module(node.name, frame);
+        const newModule = new StructModule(node.name, frame);
         node.module = newModule;
-        const newFrame = newModule.frame;
 
         frame.define(node.name, node);
 
-        let hasExportedFunctions = false;
+        module.add_submodule(newModule);
+    }
 
-        for (const src of node.body) {
-            if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
-                hasExportedFunctions = true;
-                src.frame = newFrame;
-                src.module = module;
-                newFrame.define(src.identifier.name, src);
-            } else if (src instanceof MemberDecNode) {
-                src.frame = newFrame;
-                src.module = module;
-            }
-        }
-
-        if (hasExportedFunctions) {
-            module.add_submodule(newModule);
-        }
+    async visitStructAlreadyInit(
+        node: StructAlreadyInitNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(node.struct);
     }
 
     async visitStructInit(
@@ -1086,6 +1337,134 @@ export class Engine implements ASTVisitor {
         }
 
         frame.stack.push(new StructType(instance, struct.name));
+    }
+
+
+    async visitIfLet(
+        node: IfLetNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        const value = frame.stack.pop() as Type<any>;
+
+        const matches = await this.matchPattern(node.pattern, value, { frame, module });
+
+        if (matches) {
+            await this.visit(node.consequent, { frame, module })
+        } else {
+            if (node.alternate) {
+                await this.visit(node.alternate, { frame, module })
+            }
+        }
+    }
+
+    async visitMatch(
+        node: MatchNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        const value = frame.stack.pop() as Type<any>;
+
+        for (const arm of node.arms) {
+            const new_frame = new Frame(frame);
+
+            const matches = await this.matchPattern(arm.pattern, value, { frame: new_frame, module });
+
+            if (!matches) continue;
+
+            await this.visit(arm.exp_block, { frame: new_frame, module });
+
+            frame.continue_flag = new_frame.continue_flag;
+            frame.break_flag = new_frame.break_flag;
+            frame.return_flag = new_frame.return_flag;
+            frame.return_value = new_frame.return_value;
+
+            if (new_frame.return_value) {
+                frame.stack.push(new_frame.return_value);
+            } else {
+                const ret = new_frame.stack.pop();
+
+                if (ret)
+                    frame.stack.push(ret);
+            }
+
+            return;
+        }
+    }
+
+    private async matchPattern(
+        pattern: ASTNode,
+        value: Type<any>,
+        { frame, module }: { frame: Frame, module: Module }
+    ): Promise<boolean> {
+        if (
+            pattern instanceof NumberNode ||
+            pattern instanceof StringNode ||
+            pattern instanceof ScopedIdentifierNode
+        ) {
+            await this.visit(pattern, { frame, module });
+            const res = frame.stack.pop() as Type<any>;
+
+            return res.eq(value).getValue();
+        }
+
+        if (pattern instanceof EnumPatternNode) {
+            await this.visit(pattern.path, { frame, module });
+            const res = frame.stack.pop();
+
+            if (
+                value instanceof EnumType &&
+                res instanceof TaggedNode
+            ) {
+                if (res.name !== value.tag) {
+                    return false;
+                }
+
+                for (let [index, val] of pattern.patterns.entries()) {
+                    if (
+                        val instanceof ScopedIdentifierNode &&
+                        val.name.length == 1
+                    ) {
+                        const v = await value.getValue().get({
+                            engine: this,
+                            frame,
+                            module
+                        }, new NumberType(index), []);
+                        frame.define(val.name[0], v);
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        if (pattern instanceof WildcardNode) {
+            return true;
+        }
+
+        return false;
+    }
+
+    async visitTagged(
+        node: TaggedNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let _enum;
+
+        if (node.body instanceof TupleVariantNode) {
+            const a = [];
+            for (const src of node.body.types) {
+                await this.visit(src, { frame, module });
+                a.push(frame.stack.pop() as Type<any>);
+            }
+
+            _enum = new EnumType(node.name, new TupleType(a), node.members);
+        } else if (node.body instanceof NumberNode) {
+            await this.visit(node.body, { frame, module });
+            _enum = new EnumType(node.name, frame.stack.pop(), node.members);
+        }
+
+        frame.stack.push(_enum);
     }
 
     async visitMap(

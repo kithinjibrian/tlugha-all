@@ -1,5 +1,22 @@
-import { Type } from "./base";
-import { BoolType } from "./bool";
+import { BlockNode, FunctionDecNode, IdentifierNode, ReturnNode } from "../types";
+import { Env, Type } from "./base";
+import { result } from "./result";
+import { StringType } from "./string";
+import { FunctionType } from "./type";
+
+let m: Record<string, any> = {
+    get(env: Env, value: any[], args: any[]) {
+        const index = args[0].getValue()
+        if (index in value) {
+            return result(env.engine, value[index], null)
+        }
+        return result(env.engine, null, new StringType(`Key '${index}' doesn't exist.`));
+    },
+    insert(_: Env, value: any[], args: any[]) {
+        const index = args[0].getValue();
+        value[index] = args[1];
+    }
+}
 
 export class MapType extends Type<Record<string, Type<any>>> {
     constructor(value: Record<string, Type<any>>) {
@@ -11,7 +28,7 @@ export class MapType extends Type<Record<string, Type<any>>> {
                 }, {} as Record<string, any>);
             },
             str: (indentLevel = 0) => {
-                let result = "{\n";
+                let result = "Map {\n";
 
                 const indent = "  ".repeat(indentLevel + 1);
 
@@ -33,18 +50,35 @@ export class MapType extends Type<Record<string, Type<any>>> {
 
                 return result;
             },
-            get: (obj: Type<string>) => {
+            get: async (env: Env, obj: Type<string>, args: Type<any>[]) => {
                 const index = obj.getValue();
 
-                if (value[index])
-                    return value[index];
-                else
-                    return new BoolType(false);
+                if (!(index in m)) {
+                    throw new Error(`Method '${index}' doesn't exist for a map object.'`)
+                }
+
+                return new FunctionType(
+                    new FunctionDecNode(
+                        null,
+                        new IdentifierNode(null, index),
+                        undefined,
+                        new BlockNode(null, [
+                            new ReturnNode(
+                                null,
+                                await m[index](env, value, args)
+                            )
+                        ])
+                    )
+                );
             },
             set: (key: Type<string>, newValue: Type<any>) => {
                 const index = key.getValue();
                 value[index] = newValue;
             }
         });
+    }
+
+    *[Symbol.iterator]() {
+        yield this;
     }
 }

@@ -1,0 +1,24 @@
+// cheating. should inject result as core
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+struct Regex {
+    regex: string;
+}
+
+impl Regex {
+    fun new(regex: string): Regex {
+        return Regex {
+            regex
+        };
+    }
+
+    fun is_match(self: Self, str: string): bool {
+        return match(root::builtin::__re_test__(self.regex, str)) {
+            Result::Ok(t) => t,
+            Result::Err(f) => f,
+        };
+    }
+}

@@ -9,7 +9,6 @@ import {
     EnumNode,
     EnumVariantNode,
     EnumVariantValueNode,
-    ExpressionNode,
     ExpressionStatementNode,
     FieldNode,
     FunctionDecNode,
@@ -32,7 +31,6 @@ import {
     StructInitNode,
     StructFieldNode,
     StructNode,
-    StructVariantNode,
     TupleNode,
     TupleVariantNode,
     TypeNode,
@@ -47,17 +45,38 @@ import {
     MemberDecNode,
     LambdaNode,
     AliasNode,
+    ForNode,
+    RangeNode,
+    SpreadElementNode,
+    MatchNode,
+    MatchArmNode,
+    WildcardNode,
+    EnumPatternNode,
+    IfLetNode,
+    ImplNode,
 } from "./ast";
 
 import { Token } from "../lexer/lexer";
 import { TokenType } from "../lexer/token";
 import { ErrorCodes, TError } from "../error/error";
 
+interface Args {
+    statement: boolean,
+    no_init: boolean,
+    constant: boolean,
+    ignore_type: boolean
+}
+
 export class Parser {
     private tokens: Token[] = [];
     private current: number = 0;
+    private file_path: string;
 
-    constructor(tokens: Token[]) {
+    constructor(
+        tokens: Token[],
+        file_path: string
+    ) {
+        this.file_path = file_path;
         this.tokens = tokens.filter(token => token.type !== TokenType.Newline);
     }
 
@@ -79,6 +98,11 @@ export class Parser {
         return this.previous();
     }
 
+    private backtrack(): Token {
+        if (this.current > 0) this.current--;
+        return this.peek();
+    }
+
     private check(type: TokenType): boolean {
         if (this.is_at_end()) return false;
         return this.peek().type === type;
@@ -98,6 +122,7 @@ export class Parser {
         const token = this.peek();
         throw new TError({
             code,
+            file: this.file_path,
             reason,
             line: token.line,
             column: token.column,
@@ -114,7 +139,7 @@ export class Parser {
      * Program ::= (source_elements)? <EOF>
      */
     public parse(): ASTNode {
-        let source = this.source_elements();
+        let source = this.source_elements({} as Args);
 
         if (this.match(TokenType.EOF)) {
             this.error(
@@ -129,11 +154,11 @@ export class Parser {
     /*
         source_elements ::= (source_element)+
     */
-    private source_elements(): ASTNode {
+    private source_elements(args: Args): ASTNode {
         const sources: ASTNode[] = [];
 
         while (!this.is_at_end()) {
-            sources.push(this.source_element());
+            sources.push(this.source_element(args));
         }
 
         return new SourceElementsNode(this.peek(), sources);
@@ -142,17 +167,18 @@ export class Parser {
     /*
         source_element ::= statement
     */
-    private source_element(): ASTNode {
-        return this.statement();
+    private source_element(args: Args): ASTNode {
+        return this.statement({
+            ...args,
+            statement: true
+        });
     }
 
     /**
-     statement ::= block
-        | variable_statement
+     statement ::= variable_statement
         | import_statement
         | use_statement
         | empty_statement
-        | if_statement
         | iteration_statement
         | continue_statement
         | break_statement
@@ -163,42 +189,40 @@ export class Parser {
         | trait_statement
         | module_statement
      */
-    private statement(): ASTNode {
+    private statement(args: Args): ASTNode {
         const iden = this.peek().type;
 
         switch (iden) {
             case TokenType.Fun:
-                return this.function_declaration();
+                return this.function_declaration(args);
             case TokenType.While:
-                return this.while_statement();
+                return this.while_statement(args);
             case TokenType.For:
-            // return this.for_statement();
+                return this.for_statement(args);
             case TokenType.Return:
-                return this.return_statement();
+                return this.return_statement(args);
             case TokenType.Break:
-                return this.break_statement();
+                return this.break_statement(args);
             case TokenType.Continue:
-                return this.continue_statement();
-            case TokenType.LeftBrace:
-                return this.block();
-            case TokenType.If:
-                return this.if_statement();
+                return this.continue_statement(args);
             case TokenType.Struct:
-                return this.struct_statement();
+                return this.struct_statement(args);
             case TokenType.Enum:
-                return this.enum_statement();
+                return this.enum_statement(args);
             case TokenType.Module:
-                return this.module_statement();
+                return this.module_statement(args);
             case TokenType.Import:
-                return this.import();
+                return this.import(args);
             case TokenType.Use:
-                return this.use();
+                return this.use(args);
             case TokenType.Type:
-                return this.alias();
+                return this.alias(args);
+            case TokenType.Impl:
+                return this.impl(args);
             case TokenType.Const:
             case TokenType.Let:
                 {
-                    const node = this.variable_statement();
+                    const node = this.variable_statement(args);
                     if (!this.match(TokenType.SemiColon)) {
                         this.error(
                             ErrorCodes.parser.MISSING_SEMICOLON, // Error code for syntax errors
@@ -213,11 +237,11 @@ export class Parser {
                 }
         }
 
-        return this.expression_statement();
+        return this.expression_statement(args);
     }
 
     // function_declaration ::= "fun" identifier (type_parameters)? "(" (parameter_list)? ")" type_annotation function_body
-    private function_declaration(): FunctionDecNode {
+    private function_declaration(args: Args): FunctionDecNode {
         // Expect function keyword ('fun')
         if (!this.match(TokenType.Fun)) {
             this.error(
@@ -232,12 +256,12 @@ export class Parser {
 
         const fun_token = this.peek();
 
-        const functionName = this.identifier();
+        const functionName = this.identifier(args);
         let tp: TypeParameterNode[] | undefined = undefined;
 
         // Check for type parameters (generic functions)
         if (this.match(TokenType.LT)) {
-            tp = this.type_parameters();
+            tp = this.type_parameters(args);
 
             // Expect closing '>'
             if (!this.match(TokenType.GT)) {
@@ -265,7 +289,7 @@ export class Parser {
         }
 
         // Parse the function parameters
-        let parameters = this.parameters_list();
+        let parameters = this.parameters_list(args);
 
         // Expect closing parenthesis after parameters
         if (!this.match(TokenType.RightParen)) {
@@ -283,7 +307,7 @@ export class Parser {
 
         // Check if return type is specified
         if (this.match(TokenType.Colon)) {
-            rt = this.type();
+            rt = this.type(args);
         } else {
             this.error(
                 ErrorCodes.parser.MISSING_RETURN_TYPE,
@@ -296,7 +320,7 @@ export class Parser {
         }
 
         // Expect function body (block)
-        let body = this.block();
+        let body = this.block(args);
         body.name = `fn_body_${functionName.name}`;
 
         return new FunctionDecNode(
@@ -312,7 +336,8 @@ export class Parser {
         );
     }
 
-    private lambda_function(): LambdaNode {
+    private lambda_function(args: Args): LambdaNode {
+        const fun_token = this.peek();
         // Expect function keyword ('fun') for lambda function
         if (!this.match(TokenType.Fun)) {
             this.error(
@@ -325,13 +350,11 @@ export class Parser {
             );
         }
 
-        const fun_token = this.peek();
-
         let tp: TypeParameterNode[] | undefined = undefined;
 
         // Check for type parameters (generic lambdas)
         if (this.match(TokenType.LT)) {
-            tp = this.type_parameters();
+            tp = this.type_parameters(args);
 
             // Expect closing '>'
             if (!this.match(TokenType.GT)) {
@@ -359,7 +382,10 @@ export class Parser {
         }
 
         // Parse the lambda function parameters
-        let parameters = this.parameters_list();
+        let parameters = this.parameters_list({
+            ...args,
+            ignore_type: true
+        });
 
         // Expect closing parenthesis after parameters
         if (!this.match(TokenType.RightParen)) {
@@ -375,9 +401,9 @@ export class Parser {
 
         let rt: ASTNode | undefined = undefined;
 
-        // Check if return type is specified (optional in some cases)
+        // Check if return type is specified
         if (this.match(TokenType.Colon)) {
-            rt = this.type();
+            rt = this.type(args);
         }
 
         let body;
@@ -386,9 +412,9 @@ export class Parser {
         if (this.match(TokenType.Arrow)) {
             // Check if body is a block or an expression
             if (this.check(TokenType.LeftBrace)) {
-                body = this.block();
+                body = this.block(args);
             } else {
-                body = this.expression();
+                body = this.expression(args);
             }
         } else {
             this.error(
@@ -412,7 +438,7 @@ export class Parser {
         );
     }
 
-    private parameters_list(): ParametersListNode | undefined {
+    private parameters_list(args: Args): ParametersListNode | undefined {
         // If the next token is a right parenthesis, this means no parameters are provided.
         if (this.peek().type === TokenType.RightParen) {
             return undefined;
@@ -436,7 +462,7 @@ export class Parser {
             }
 
             // Parse the current parameter
-            const n = this.parameter();
+            const n = this.parameter(args);
 
             // Check if the current parameter is variadic
             if (n.variadic) {
@@ -450,7 +476,7 @@ export class Parser {
         return new ParametersListNode(this.peek(), parameters);
     }
 
-    private parameter(): ParameterNode {
+    private parameter(args: Args): ParameterNode {
         let variadic = false;
 
         // Check for ellipsis token (variadic parameter)
@@ -459,10 +485,12 @@ export class Parser {
         }
 
         // Parse the identifier (parameter name)
-        const identifier = this.identifier();
+        const identifier = this.identifier(args);
+        let data_type = null;
 
-        // Check for the colon token (parameter type annotation)
-        if (!this.match(TokenType.Colon)) {
+        const has_colon = this.match(TokenType.Colon);
+
+        if (!has_colon && !args.ignore_type) {
             this.error(
                 ErrorCodes.parser.MISSING_TYPE_ANNOTATION,
                 `Parameter '${identifier.name}' requires type annotation.`,
@@ -473,10 +501,10 @@ export class Parser {
             );
         }
 
-        // Parse the parameter's data type
-        const data_type = this.type();
+        if (has_colon || !args.ignore_type) {
+            data_type = this.type(args);
+        }
 
-        // Return the parsed parameter as a ParameterNode
         return new ParameterNode(
             this.peek(),
             identifier,
@@ -485,8 +513,68 @@ export class Parser {
         );
     }
 
+    private for_statement(args: Args): ForNode {
+        const token = this.peek();
+        // Check for the 'for' keyword
+        if (!this.match(TokenType.For)) {
+            this.error(
+                ErrorCodes.parser.MISSING_FOR_KEYWORD,
+                "Expected keyword 'for' to start a for loop.",
+                "Ensure you're starting the loop with the 'for' keyword.",
+                `Found token: '${this.peek().value}' instead of 'for'.`,
+                ["'for'"],
+                "'for (let var in 1..5) { ... }'"
+            );
+        }
+
+        // Expect opening parenthesis
+        if (!this.match(TokenType.LeftParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_PAREN,
+                "Expected '(' before the variable in the for loop.",
+                "Ensure the expression inside the for loop is enclosed in parentheses.",
+                `Found token: '${this.peek().value}' instead of '('`,
+                ["'('"],
+                "'for (let a in 1..5) { ... }'"
+            );
+        }
+
+        const variable = this.variable_statement(args);
+
+        if (!this.match(TokenType.In)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_PAREN,
+                "Expected 'in' after the variable in the for loop."
+            );
+        }
+
+        const expression = this.expression(args);
+
+        if (!this.match(TokenType.RightParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                "Expected ')' after the expression in the for loop.",
+                "Ensure the expression is closed with a ')' after the condition.",
+                `Found token: '${this.peek().value}' instead of ')'`,
+                [")"],
+                "'for (let a in 1..5) { ... }'"
+            );
+        }
+
+        // Parse the body of the while loop
+        const body = this.block(args);
+
+        // If the body is a block, name it "While"
+        if (body instanceof BlockNode) {
+            body.name = "While";
+        }
+
+        return new ForNode(token, variable, expression, body);
+    }
+
     // "while" "(" expression ")" statement
-    private while_statement(): WhileNode {
+    private while_statement(args: Args): WhileNode {
+        const token = this.peek();
         // Check for the 'while' keyword
         if (!this.match(TokenType.While)) {
             this.error(
@@ -512,7 +600,7 @@ export class Parser {
         }
 
         // Parse the loop expression
-        let expression = this.expression();
+        let expression = this.expression(args);
 
         // Expect closing parenthesis
         if (!this.match(TokenType.RightParen)) {
@@ -527,7 +615,7 @@ export class Parser {
         }
 
         // Parse the body of the while loop
-        const body = this.statement();
+        const body = this.block(args);
 
         // If the body is a block, name it "While"
         if (body instanceof BlockNode) {
@@ -535,14 +623,14 @@ export class Parser {
         }
 
         // Return the constructed WhileNode
-        return new WhileNode(this.peek(), expression, body);
+        return new WhileNode(token, expression, body);
     }
 
     /*  
         block ::= { statement_list }
         statement_list ::= statement+
     */
-    private block(): BlockNode {
+    private block(args: Args): BlockNode {
         const body: ASTNode[] = [];
 
         // Expect opening brace
@@ -559,8 +647,45 @@ export class Parser {
 
         // Parse statements inside the block
         while (!this.check(TokenType.RightBrace) && !this.is_at_end()) {
-            body.push(this.statement());
+            body.push(this.statement(args));
         }
+
+        let must_semi: ASTNode[] = [], errors = [];
+
+        for (let i = 0; i < body.length - 1; i++) {
+            if (!(
+                body[i] instanceof IfElseNode ||
+                body[i] instanceof IfLetNode ||
+                body[i] instanceof ExpressionStatementNode ||
+                body[i] instanceof VariableStatementNode
+            )) {
+                must_semi.push(body[i]);
+            }
+        }
+
+        if (must_semi.length > 1) {
+            for (let s of must_semi) {
+                const token = Object.assign({
+                    line: 1,
+                    column: 1,
+                    lineStr: ""
+                }, s.token);
+
+                const err = new TError({
+                    code: ErrorCodes.parser.MISSING_SEMICOLON,
+                    reason: "Expected ';' in expression.",
+                    line: token.line,
+                    column: token.column,
+                    lineStr: token.line_str,
+                    stage: "parser",
+                })
+
+                errors.push(err.message)
+            }
+        }
+
+        if (errors.length > 1)
+            throw new Error(errors.join("\n\n"));
 
         // Expect closing brace
         if (!this.match(TokenType.RightBrace)) {
@@ -577,7 +702,7 @@ export class Parser {
         return new BlockNode(this.peek(), body);
     }
 
-    private return_statement(): ReturnNode {
+    private return_statement(args: Args): ReturnNode {
         // Expect the 'return' keyword
         if (!this.match(TokenType.Return)) {
             this.error(
@@ -596,24 +721,27 @@ export class Parser {
         }
 
         // Parse the expression after 'return'
-        const expression = this.expression();
+        const expression = this.expression(args);
 
         // Expect semicolon after return statement
         if (!this.match(TokenType.SemiColon)) {
-            this.error(
-                ErrorCodes.parser.MISSING_SEMICOLON,
-                "Expected ';' after return statement.",
-                "Ensure the return statement ends with a semicolon.",
-                `Found token: '${this.peek().value}' instead of ';'.`,
-                ["';'"],
-                "'return value;'"
-            );
+            // WILL BITE BACK
+            if (args.statement)
+                this.error(
+                    ErrorCodes.parser.MISSING_SEMICOLON,
+                    "Expected ';' after return statement.",
+                    "Ensure the return statement ends with a semicolon.",
+                    `Found token: '${this.peek().value}' instead of ';'.`,
+                    ["';'"],
+                    "'return value;'"
+                );
         }
 
         return new ReturnNode(this.peek(), expression);
     }
 
-    private break_statement(): ASTNode {
+    private break_statement(args: Args): ASTNode {
+        const token = this.peek();
         if (!this.match(TokenType.Break)) {
             this.error(
                 ErrorCodes.parser.MISSING_BREAK_KEYWORD,
@@ -638,14 +766,15 @@ export class Parser {
 
         return {
             type: "Break",
-            token: this.peek(),
-            accept(visitor) {
-                return visitor.visitBreak?.(this);
+            token,
+            accept(visitor, argz) {
+                return visitor.visitBreak?.(this, argz);
             }
         };
     }
 
-    private continue_statement(): ASTNode {
+    private continue_statement(args: Args): ASTNode {
+        const token = this.peek();
         if (!this.match(TokenType.Continue)) {
             this.error(
                 ErrorCodes.parser.MISSING_CONTINUE_KEYWORD,
@@ -670,15 +799,17 @@ export class Parser {
 
         return {
             type: "Continue",
-            token: this.peek(),
-            accept(visitor) {
-                return visitor.visitContinue?.(this);
+            token,
+            accept(visitor, argz) {
+                return visitor.visitContinue?.(this, argz);
             }
         };
     }
 
     // "if" "(" expression ")" statement ("else" statement)?
-    private if_statement(): IfElseNode {
+    private if_expression(args: Args): IfElseNode | IfLetNode {
+        const token = this.peek();
+
         if (!this.match(TokenType.If)) {
             this.error(
                 ErrorCodes.parser.MISSING_IF_KEYWORD,
@@ -688,6 +819,11 @@ export class Parser {
                 ["'if'"],
                 "'if (condition) { ... }'"
             );
+        }
+
+        if (this.check(TokenType.Let)) {
+            this.backtrack()
+            return this.if_let_expression(args);
         }
 
         if (!this.match(TokenType.LeftParen)) {
@@ -701,7 +837,7 @@ export class Parser {
             );
         }
 
-        let condition = this.expression();
+        let condition = this.expression(args);
 
         if (!this.match(TokenType.RightParen)) {
             this.error(
@@ -714,19 +850,19 @@ export class Parser {
             );
         }
 
-        const consequent = this.statement();
+        const consequent = this.block(args);
 
         if (this.match(TokenType.Else)) {
-            const alternate = this.statement();
-            return new IfElseNode(this.peek(), condition, consequent, alternate);
+            const alternate = this.block(args);
+            return new IfElseNode(token, condition, consequent, alternate);
         }
 
-        return new IfElseNode(this.peek(), condition, consequent);
+        return new IfElseNode(token, condition, consequent);
     }
 
-    // variable_statement ::= "let" variable_declaration ";"
-    // | "const" variable_declaration ";"
-    private variable_statement(): VariableStatementNode {
+    // variable_statement ::= "let" variable_declaration
+    // | "const" variable_declaration
+    private variable_statement(args: Args): VariableStatementNode {
         let constant = false;
 
         if (!this.match(TokenType.Let)) {
@@ -744,16 +880,19 @@ export class Parser {
             }
         }
 
-        return new VariableStatementNode(this.peek(), this.variable(constant));
+        return new VariableStatementNode(this.peek(), this.variable({
+            ...args,
+            constant
+        }));
     }
 
     // variable_declaration ::= ("mut")? identifier (type_annotation)? (initialiser)?
-    private variable(constant: boolean = false): VariableNode {
+    private variable(args: Args): VariableNode {
         let mutable = false;
         let expression = undefined;
 
         if (this.match(TokenType.Mut)) {
-            if (constant) {
+            if (args.constant) {
                 this.error(
                     ErrorCodes.parser.INVALID_MUT_CONST_COMBO,
                     "Cannot use 'mut' with a constant variable.",
@@ -766,18 +905,28 @@ export class Parser {
             mutable = true;
         }
 
-        let identifier = this.identifier();
+        let identifier = this.identifier(args);
 
-        const data_type = this.type_annotation();
+        const data_type = this.type_annotation(args);
 
         if (this.match(TokenType.Equals)) {
-            expression = this.assignment_expression();
+            if (args.no_init) {
+                this.error(
+                    ErrorCodes.parser.SYNTAX_ERROR,
+                    "This variable can't be initialized.",
+                    "Variables inside constructs like for loops cannot be initialized."
+                );
+            }
+            expression = this.expression({
+                ...args,
+                statement: false
+            });
         }
 
         return new VariableNode(
             this.peek(),
             identifier,
-            constant,
+            args.constant,
             mutable,
             expression,
             undefined,
@@ -786,7 +935,7 @@ export class Parser {
     }
 
     // scoped_identifier ::= identifier  ("::" identifier)*
-    private scoped_identifier(): ScopedIdentifierNode {
+    private scoped_identifier(args: Args): ScopedIdentifierNode {
         if (!this.match(TokenType.Identifier)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_IDENTIFIER,
@@ -817,7 +966,7 @@ export class Parser {
         return new ScopedIdentifierNode(this.peek(), names);
     }
 
-    private identifier(): IdentifierNode {
+    private identifier(args: Args): IdentifierNode {
         if (!this.match(TokenType.Identifier)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_IDENTIFIER,
@@ -833,7 +982,7 @@ export class Parser {
         return new IdentifierNode(this.peek(), name);
     }
 
-    private alias(): AliasNode {
+    private alias(args: Args): AliasNode {
         if (!this.match(TokenType.Type)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_TYPE_KEYWORD,
@@ -845,7 +994,7 @@ export class Parser {
             );
         }
 
-        const identifier = this.identifier();
+        const identifier = this.identifier(args);
 
         if (!this.match(TokenType.Equals)) {
             this.error(
@@ -858,7 +1007,7 @@ export class Parser {
             );
         }
 
-        const data_type = this.type();
+        const data_type = this.type(args);
 
         if (!this.match(TokenType.SemiColon)) {
             this.error(
@@ -878,7 +1027,7 @@ export class Parser {
         type_parameters ::= "<" type_parameter ("," type_parameter)* ">"
         type_parameter ::= identifier (":" identifier ("," identifier)*)?
      */
-    private type_parameters(): TypeParameterNode[] {
+    private type_parameters(args: Args): TypeParameterNode[] {
         const params: TypeParameterNode[] = [];
 
         do {
@@ -919,12 +1068,12 @@ export class Parser {
     }
 
     // type_annotation ::= ":" type
-    private type_annotation(): ASTNode | undefined {
+    private type_annotation(args: Args): ASTNode | undefined {
         if (!this.match(TokenType.Colon)) {
             return undefined;
         }
 
-        return this.type();
+        return this.type(args);
     }
 
     /**
@@ -933,12 +1082,12 @@ export class Parser {
         | Type < type ("," type)* >
         | "(" type ("," type)* ")"
      */
-    public type(): ASTNode {
+    public type(args: Args): ASTNode {
         let type: ASTNode | null = null;
 
-        if ((type = this.ft_type())) {
+        if ((type = this.ft_type(args))) {
             return type;
-        } else if ((type = this.other_type())) {
+        } else if ((type = this.other_type(args))) {
             return type;
         }
 
@@ -949,7 +1098,7 @@ export class Parser {
         };
     }
 
-    private ft_type(): ASTNode | null {
+    private ft_type(args: Args): ASTNode | null {
         if (!this.match(TokenType.LeftParen)) {
             return null; // Not a function type; let caller handle
         }
@@ -958,11 +1107,11 @@ export class Parser {
         const types: ASTNode[] = [];
 
         if (!this.check(TokenType.RightParen)) {
-            types.push(this.type());
+            types.push(this.type(args));
 
             while (this.match(TokenType.Comma)) {
                 if (this.check(TokenType.RightParen)) break; // Allow trailing comma
-                types.push(this.type());
+                types.push(this.type(args));
             }
         }
 
@@ -979,14 +1128,14 @@ export class Parser {
 
         if (this.match(TokenType.Arrow)) {
             type = "->";
-            types.push(this.type());
+            types.push(this.type(args));
         }
 
         return new TypeNode(this.peek(), type, types);
     }
 
     // Type "<" type ">"
-    private other_type(): ASTNode | null {
+    private other_type(args: Args): ASTNode | null {
         if (!this.match(TokenType.Identifier)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_IDENTIFIER,
@@ -1008,11 +1157,11 @@ export class Parser {
         const types: ASTNode[] = [];
 
         if (!this.check(TokenType.GT)) {
-            types.push(this.type());
+            types.push(this.type(args));
 
             while (this.match(TokenType.Comma)) {
                 if (this.check(TokenType.GT)) break; // Allow trailing comma
-                types.push(this.type());
+                types.push(this.type(args));
             }
         }
 
@@ -1031,50 +1180,27 @@ export class Parser {
     }
 
     // expression_statement::= expression ";"
-    private expression_statement(): ExpressionStatementNode {
-        const expression = this.expression();
+    private expression_statement(args: Args): ASTNode {
+        const expression = this.expression(args);
 
-        if (!this.match(TokenType.SemiColon)) {
-            this.error(
-                ErrorCodes.parser.MISSING_SEMICOLON,
-                "Expected ';' after expression.",
-                "All expressions used as standalone statements must be terminated with a semicolon.",
-                `Found token: '${this.peek().value}' instead of ';'.`,
-                ["';'"],
-                "'do_something();'"
-            );
+        if (this.match(TokenType.SemiColon)) {
+            return new ExpressionStatementNode(this.peek(), expression);
         }
 
-        return new ExpressionStatementNode(this.peek(), expression);
-    }
-
-    // expression ::= assignment_expression ("," assignment_expression)*
-    private expression(): ASTNode {
-        const expr = this.assignment_expression();
-
-        if (this.match(TokenType.Comma)) {
-            const expressions = [expr];
-
-            do {
-                expressions.push(this.assignment_expression());
-            } while (this.match(TokenType.Comma));
-
-            return new ExpressionNode(this.peek(), expressions);
-        }
-
-        return expr;
+        return expression;
     }
 
     /**
-    assignment_expression ::= conditional_expression
-        | unary_expression assignment_operator assignment_expression
+    expression ::= range_expression
+        | unary_expression assignment_operator expression
      */
-    private assignment_expression(): ASTNode {
-        const left = this.conditional_expression();
+    private expression(args: Args): ASTNode {
+        const token = this.peek();
+        const left = this.range_expression(args);
 
         if (this.is_assignment_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.assignment_expression();
+            const right = this.expression(args);
 
             if (!this.is_valid_assignment_target(left)) {
                 this.error(
@@ -1087,7 +1213,7 @@ export class Parser {
                 );
             }
 
-            return new AssignmentExpressionNode(this.peek(), operator, left, right);
+            return new AssignmentExpressionNode(token, operator, left, right);
         }
 
         return left;
@@ -1120,11 +1246,59 @@ export class Parser {
         }
     }
 
-    private conditional_expression(): ASTNode {
-        const condition = this.logical_or_expression();
+    /*
+     * range_expression ::= conditional_expression (range_operator conditional_expression?)?
+     * | range_operator conditional_expression?
+     */
+    private range_expression(args: Args): ASTNode {
+        if (this.is_range_operator(this.peek().type)) {
+            const operator = this.advance();
+
+            let end: ASTNode | null = null;
+            if (!this.is_at_end() && !this.is_assignment_operator(this.peek().type)) {
+                end = this.conditional_expression(args);
+            }
+
+            return new RangeNode(
+                operator,
+                null,
+                end,
+                operator.type === TokenType.IRange
+            )
+        }
+
+        const start = this.conditional_expression(args);
+
+        if (this.is_range_operator(this.peek().type)) {
+            const operator = this.advance();
+
+            let end: ASTNode | null = null;
+            if (!this.is_at_end() && !this.is_assignment_operator(this.peek().type)) {
+                end = this.conditional_expression(args);
+            }
+
+            return new RangeNode(
+                operator,
+                start,
+                end,
+                operator.type === TokenType.IRange
+            );
+
+        }
+
+        return start;
+    }
+
+    private is_range_operator(type: TokenType): boolean {
+        return type === TokenType.IRange || // (..=)
+            type === TokenType.ERange // (..)
+    }
+
+    private conditional_expression(args: Args): ASTNode {
+        const condition = this.logical_or_expression(args);
 
         if (this.match(TokenType.QuestionMark)) {
-            const consequent = this.expression();
+            const consequent = this.expression(args);
 
             if (!this.match(TokenType.Colon)) {
                 this.error(
@@ -1137,7 +1311,7 @@ export class Parser {
                 );
             }
 
-            const alternate = this.conditional_expression();
+            const alternate = this.conditional_expression(args);
 
             return {
                 type: 'TertiaryExpression',
@@ -1146,7 +1320,7 @@ export class Parser {
                 consequent,
                 alternate,
                 accept(visitor) {
-                    return visitor.visitTertiaryExpression?.(this);
+                    return visitor.visitTertiaryExpression?.(this); // COMEBACK HERE
                 }
             } as ASTNode;
         }
@@ -1154,36 +1328,36 @@ export class Parser {
         return condition;
     }
 
-    private logical_or_expression(): ASTNode {
-        let expr = this.logical_and_expression();
+    private logical_or_expression(args: Args): ASTNode {
+        let expr = this.logical_and_expression(args);
 
         while (this.match(TokenType.Or)) {
             const operator = this.previous().value;
-            const right = this.logical_and_expression();
+            const right = this.logical_and_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
 
         return expr;
     }
 
-    private logical_and_expression(): ASTNode {
-        let expr = this.bitwise_or_expression();
+    private logical_and_expression(args: Args): ASTNode {
+        let expr = this.bitwise_or_expression(args);
 
         while (this.match(TokenType.And)) {
             const operator = this.previous().value;
-            const right = this.bitwise_or_expression();
+            const right = this.bitwise_or_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
 
         return expr;
     }
 
-    private bitwise_or_expression(): ASTNode {
-        let expr = this.bitwise_xor_expression();
+    private bitwise_or_expression(args: Args): ASTNode {
+        let expr = this.bitwise_xor_expression(args);
 
         while (this.match(TokenType.Pipe)) {
             const operator = this.previous().value;
-            const right = this.bitwise_xor_expression();
+            const right = this.bitwise_xor_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
 
@@ -1191,36 +1365,36 @@ export class Parser {
     }
 
 
-    private bitwise_xor_expression(): ASTNode {
-        let expr = this.bitwise_and_expression();
+    private bitwise_xor_expression(args: Args): ASTNode {
+        let expr = this.bitwise_and_expression(args);
 
         while (this.match(TokenType.Caret)) {
             const operator = this.previous().value;
-            const right = this.bitwise_and_expression();
+            const right = this.bitwise_and_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
 
         return expr;
     }
 
-    private bitwise_and_expression(): ASTNode {
-        let expr = this.equality_expression();
+    private bitwise_and_expression(args: Args): ASTNode {
+        let expr = this.equality_expression(args);
 
         while (this.match(TokenType.Ampersand)) {
             const operator = this.previous().value;
-            const right = this.equality_expression();
+            const right = this.equality_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
 
         return expr;
     }
 
-    private equality_expression(): ASTNode {
-        let expr = this.relational_expression();
+    private equality_expression(args: Args): ASTNode {
+        let expr = this.relational_expression(args);
 
         while (this.is_equality_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.relational_expression();
+            const right = this.relational_expression(args);
 
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
 
@@ -1234,12 +1408,12 @@ export class Parser {
             type === TokenType.IsNotEqual
     }
 
-    private relational_expression(): ASTNode {
-        let expr = this.shift_expression();
+    private relational_expression(args: Args): ASTNode {
+        let expr = this.shift_expression(args);
 
         while (this.is_relational_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.shift_expression();
+            const right = this.shift_expression(args);
 
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
         }
@@ -1254,12 +1428,12 @@ export class Parser {
             type === TokenType.GTE
     }
 
-    private shift_expression(): ASTNode {
-        let expr = this.additive_expression();
+    private shift_expression(args: Args): ASTNode {
+        let expr = this.additive_expression(args);
 
         while (this.is_shift_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.additive_expression();
+            const right = this.additive_expression(args);
 
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
 
@@ -1273,12 +1447,12 @@ export class Parser {
             type === TokenType.SL
     }
 
-    private additive_expression(): ASTNode {
-        let expr = this.multiplicative_expression();
+    private additive_expression(args: Args): ASTNode {
+        let expr = this.multiplicative_expression(args);
 
         while (this.is_additive_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.multiplicative_expression();
+            const right = this.multiplicative_expression(args);
 
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
 
@@ -1293,12 +1467,12 @@ export class Parser {
     }
 
 
-    private multiplicative_expression(): ASTNode {
-        let expr = this.unary_expression();
+    private multiplicative_expression(args: Args): ASTNode {
+        let expr = this.unary_expression(args);
 
         while (this.is_multiplicative_operator(this.peek().type)) {
             const operator = this.advance().value;
-            const right = this.unary_expression();
+            const right = this.unary_expression(args);
             expr = new BinaryOpNode(this.peek(), operator, expr, right);
 
         }
@@ -1313,16 +1487,25 @@ export class Parser {
     }
 
 
-    private unary_expression(): ASTNode {
-        return this.postfix_expression();
+    private unary_expression(args: Args): ASTNode {
+        return this.postfix_expression(args);
     }
 
-    private postfix_expression(): ASTNode {
-        let expr: ASTNode = this.primary_expression();
+    private postfix_expression(args: Args): ASTNode {
+        let expr: ASTNode = this.primary_expression(args);
+
+        if (expr instanceof IfElseNode ||
+            expr instanceof IfLetNode ||
+            expr instanceof MatchNode ||
+            expr instanceof BlockNode ||
+            expr instanceof LambdaNode
+        ) {
+            return expr;
+        }
 
         while (true) {
             if (this.match(TokenType.LeftBracket)) {
-                const index = this.expression();
+                const index = this.expression(args);
 
                 if (!this.match(TokenType.RightBracket)) {
                     this.error(
@@ -1338,11 +1521,15 @@ export class Parser {
                 expr = new MemberExpressionNode(this.peek(), expr, index, true);
             }
             else if (this.match(TokenType.LeftParen)) {
-                const args: ASTNode[] = [];
-
+                const argz: ASTNode[] = [];
+                const token = this.peek()
                 if (!this.check(TokenType.RightParen)) {
                     do {
-                        args.push(this.assignment_expression());
+                        if (this.match(TokenType.Ellipsis)) {
+                            const spreadArg = this.expression(args);
+                            argz.push(new SpreadElementNode(token, spreadArg));
+                        } else
+                            argz.push(this.expression(args));
                     } while (this.match(TokenType.Comma));
                 }
 
@@ -1357,13 +1544,13 @@ export class Parser {
                     );
                 }
 
-                expr = new CallExpressionNode(this.peek(), expr, args);
+                expr = new CallExpressionNode(this.peek(), expr, argz);
             }
             else if (this.match(TokenType.Dot)) {
-                if (!this.match(TokenType.Identifier)) {
+                if (!this.match(TokenType.Identifier, TokenType.Number)) {
                     this.error(
                         ErrorCodes.parser.MISSING_DOT,
-                        "Expected an identifier after '.' in member access.",
+                        "Expected an identifier/number after '.' in member access.",
                         "When using '.' to access an object's property, it must be followed by a valid identifier.",
                         `Found token: '${this.peek().value}' instead of an identifier`,
                         ["identifier"],
@@ -1386,30 +1573,46 @@ export class Parser {
         return expr;
     }
 
-    private primary_expression(): ASTNode {
-        switch (this.peek().type) {
+    private primary_expression(args: Args): ASTNode {
+        const token = this.peek()
+        switch (token.type) {
             case TokenType.True:
             case TokenType.False:
             case TokenType.Number:
             case TokenType.String:
-                return this.constants();
+            case TokenType.RawString:
+                return this.constants(args);
+            case TokenType.Map:
+                return this.map(args);
+            case TokenType.Set:
+                return this.set(args);
             case TokenType.LeftBracket:
-                return this.array();
+                return this.array(args);
             case TokenType.LeftBrace:
-                return this.map_or_set();
+                return this.block(args);
             case TokenType.Fun:
-                return this.lambda_function();
+                return this.lambda_function(args);
+            case TokenType.If:
+                return this.if_expression(args);
+            case TokenType.Match:
+                return this.match_expression(args);
             case TokenType.Identifier: {
-                const iden = this.scoped_identifier();
+                const iden = this.scoped_identifier(args);
                 if (this.peek().type == TokenType.LeftBrace) {
-                    const fields = this.struct_initializer();
-                    return new StructInitNode(this.peek(), iden, fields);
+                    const fields = this.struct_initializer(args);
+                    return new StructInitNode(token, iden, fields);
                 }
                 return iden;
             }
             case TokenType.LeftParen: {
                 this.advance();
-                const expr = this.expression();
+
+                const exprs = [];
+
+                do {
+                    exprs.push(this.expression(args))
+                } while (this.match(TokenType.Comma));
+
                 if (!this.match(TokenType.RightParen)) {
                     this.error(
                         ErrorCodes.parser.MISSING_RIGHT_PAREN,
@@ -1420,10 +1623,11 @@ export class Parser {
                         "'(x + y)'"
                     );
                 }
-                if (expr instanceof ExpressionNode) {
-                    return new TupleNode(this.peek(), expr.expressions);
+
+                if (exprs.length > 1) {
+                    return new TupleNode(token, exprs);
                 }
-                return expr;
+                return exprs[0];
             }
             default:
                 return this.error(
@@ -1436,15 +1640,17 @@ export class Parser {
         }
     }
 
-    private constants(): ASTNode {
+    private constants(args: Args): ASTNode {
         switch (this.peek().type) {
             case TokenType.True:
             case TokenType.False:
-                return this.boolean();
+                return this.boolean(args);
             case TokenType.Number:
-                return this.number();
+                return this.number(args);
+            case TokenType.RawString:
+                return this.raw_string(args);
             case TokenType.String:
-                return this.string();
+                return this.string(args);
             default:
                 this.error(
                     ErrorCodes.parser.INVALID_CONSTANT,
@@ -1457,7 +1663,7 @@ export class Parser {
         }
     }
 
-    private number(): NumberNode {
+    private number(args: Args): NumberNode {
         if (!this.match(TokenType.Number)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_NUMBER,
@@ -1471,7 +1677,7 @@ export class Parser {
         return new NumberNode(this.peek(), +this.previous().value);
     }
 
-    private boolean(): BooleanNode {
+    private boolean(args: Args): BooleanNode {
         if (!this.match(TokenType.True) && !this.match(TokenType.False)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_BOOLEAN,
@@ -1485,7 +1691,22 @@ export class Parser {
         return new BooleanNode(this.peek(), this.previous().type == TokenType.True);
     }
 
-    private string(): StringNode {
+    private raw_string(args: Args): StringNode {
+        if (!this.match(TokenType.RawString)) {
+            this.error(
+                ErrorCodes.parser.EXPECTED_STRING,
+                "Expected a string literal.",
+                "String literals are enclosed in quotes.",
+                `Found token: '${this.peek().value}' instead of a string`,
+                ["string"],
+                "'hello world'"
+            );
+        }
+        return new StringNode(this.peek(), this.previous().value, true);
+    }
+
+    private string(args: Args): StringNode {
+        const token = this.peek();
         if (!this.match(TokenType.String)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_STRING,
@@ -1496,10 +1717,11 @@ export class Parser {
                 "'hello world'"
             );
         }
-        return new StringNode(this.peek(), this.previous().value);
+
+        return new StringNode(token, token.value);
     }
 
-    private array(): ArrayNode {
+    private array(args: Args): ArrayNode {
         const elements: ASTNode[] = [];
         if (!this.match(TokenType.LeftBracket)) {
             this.error(
@@ -1514,7 +1736,7 @@ export class Parser {
 
         if (!this.check(TokenType.RightBracket)) {
             do {
-                elements.push(this.conditional_expression());
+                elements.push(this.conditional_expression(args));
             } while (this.match(TokenType.Comma));
         }
 
@@ -1532,88 +1754,371 @@ export class Parser {
         return new ArrayNode(this.peek(), elements);
     }
 
-    private map_or_set(): ASTNode {
-        const elements: ASTNode[] = [];
+    private map(args: Args): ASTNode {
+        const token = this.peek();
         const properties: PropertyNode[] = [];
-        let is_ds: "none" | "set" | "map" = "none";
 
-        // Ensure that the map or set starts with a left brace
+        // Ensure the first token is 'map'
+        if (!this.match(TokenType.Map)) {
+            this.error(
+                ErrorCodes.parser.EXPECTED_MAP_KEYWORD,
+                "Expected the 'map' keyword.",
+                "Map declarations must start with the 'map' keyword.",
+                `Found token: '${this.peek().value}' instead of 'map'.`,
+                ["map"],
+                "Example: map { key: value }"
+            );
+        }
+
+        // Expect the opening brace
         if (!this.match(TokenType.LeftBrace)) {
             this.error(
                 ErrorCodes.parser.MISSING_LEFT_BRACE,
-                "Expected a '{'.",
-                "Map or set declarations must start with a left brace '{'.",
-                `Found token: '${this.peek().value}' instead of '{'`,
+                "Expected '{' after 'map'.",
+                "A map declaration must begin with an opening brace '{' after the 'map' keyword.",
+                `Found token: '${this.peek().value}' instead of '{'.`,
                 ["{"],
-                "'{1, 2, 3}' or '{key: value, key2: value2}'"
+                "Example: map { key: value }"
             );
         }
 
-        // If the map or set isn't just an empty brace, continue parsing the elements or properties
+        // Parse key-value pairs
         if (!this.check(TokenType.RightBrace)) {
             do {
-                let keyExpr = this.assignment_expression();
+                const keyExpr = this.expression(args);
 
-                // Handle key-value pairs (map)
-                if (this.match(TokenType.Colon)) {
-                    if (is_ds == "set") {
-                        this.error(
-                            ErrorCodes.parser.INVALID_MIX_SET_COMBO,
-                            "Cannot have key-value pairs in a set.",
-                            "In a set, you cannot mix key-value pairs with standalone values.",
-                            `Found token: '${this.peek().value}' instead of a valid standalone value`,
-                            ["set"],
-                            "- valid: '{1, 2, 3}' invalid: {1, key: \"value\"}"
-                        );
-                    }
-
-                    is_ds = "map";
-
-                    const valueExpr = this.assignment_expression();
-
-                    // Add properties to the map
-                    if (keyExpr instanceof StringNode) {
-                        properties.push(new PropertyNode(this.peek(), keyExpr.value, valueExpr));
-                    } else if (keyExpr instanceof ScopedIdentifierNode) {
-                        properties.push(new PropertyNode(this.peek(), keyExpr.name[0], valueExpr));
-                    }
-                } else {
-                    // Handle standalone values (set)
-                    if (is_ds == "map") {
-                        this.error(
-                            ErrorCodes.parser.INVALID_MIX_SET_COMBO,
-                            "Cannot have standalone values in a map.",
-                            "You cannot mix key-value pairs with standalone values in a map.",
-                            `Found token: '${this.peek().value}' instead of a valid keyvalue pair`,
-                            ["map"],
-                            "- valid: '{key: value, key2: value2}' invalid: {key: \"value\", 1}"
-                        );
-                    }
-
-                    is_ds = "set";
-                    elements.push(keyExpr);
+                if (!this.match(TokenType.Colon)) {
+                    this.error(
+                        ErrorCodes.parser.MISSING_COLON,
+                        "Expected ':' between key and value.",
+                        "Map declarations require a colon ':' between keys and values.",
+                        `Found token: '${this.peek().value}' instead of ':'.`,
+                        [":"],
+                        "Example: map { key: value }"
+                    );
                 }
+
+                const valueExpr = this.expression(args);
+
+                if (keyExpr instanceof StringNode) {
+                    properties.push(new PropertyNode(this.peek(), keyExpr.value, valueExpr));
+                } else if (keyExpr instanceof ScopedIdentifierNode) {
+                    if (keyExpr.name.length > 1) {
+                        this.error(
+                            ErrorCodes.parser.MALFORMED_MAP_KEY,
+                            "Malformed map key.",
+                            "Map keys must be a single identifier or string.",
+                            `Found complex identifier: '${keyExpr.name.join('::')}'.`,
+                            [],
+                            "Use simple keys like 'name' or \"name\"."
+                        );
+                    }
+                    properties.push(new PropertyNode(this.peek(), keyExpr.name[0], valueExpr));
+                }
+
             } while (this.match(TokenType.Comma) && !this.check(TokenType.RightBrace));
         }
 
-        // Ensure the map or set ends with a right brace
+        // Expect the closing brace
         if (!this.match(TokenType.RightBrace)) {
             this.error(
                 ErrorCodes.parser.MISSING_RIGHT_BRACE,
-                "Expected a '}'.",
-                "Map or set declarations must end with a right brace '}'.",
-                `Found token: '${this.peek().value}' instead of '}'`,
+                "Expected '}' at the end of map.",
+                "Map declarations must end with a closing brace '}'.",
+                `Found token: '${this.peek().value}' instead of '}'.`,
                 ["}"],
-                "'{1, 2, 3}' or '{key: value, key2: value2}'"
+                "Example: map { key: value }"
             );
         }
 
-        // Return the appropriate AST node based on whether it's a map or set
-        return is_ds == "none" ? new MapNode(this.peek(), []) : is_ds == "map"
-            ? new MapNode(this.peek(), properties) : new SetNode(this.peek(), elements);
+        return new MapNode(token, properties);
     }
 
-    private struct_initializer() {
+    private set(args: Args): ASTNode {
+        const token = this.peek();
+        const elements: ASTNode[] = [];
+
+        // Ensure the first token is 'set'
+        if (!this.match(TokenType.Set)) {
+            this.error(
+                ErrorCodes.parser.EXPECTED_SET_KEYWORD,
+                "Expected the 'set' keyword.",
+                "Set declarations must start with the 'set' keyword.",
+                `Found token: '${this.peek().value}' instead of 'set'.`,
+                ["set"],
+                "Example: set { elem1, elem2 }"
+            );
+        }
+
+        // Expect the opening brace
+        if (!this.match(TokenType.LeftBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected '{' after 'set'.",
+                "A Set declaration must begin with an opening brace '{' after the 'set' keyword.",
+                `Found token: '${this.peek().value}' instead of '{'.`,
+                ["{"],
+                "Example: set { elem1, elem2 }"
+            );
+        }
+
+        // Parse key-value pairs
+        if (!this.check(TokenType.RightBrace)) {
+            do {
+                const expr = this.expression(args);
+                elements.push(expr);
+            } while (this.match(TokenType.Comma) && !this.check(TokenType.RightBrace));
+        }
+
+        // Expect the closing brace
+        if (!this.match(TokenType.RightBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_BRACE,
+                "Expected '}' at the end of set.",
+                "Set declarations must end with a closing brace '}'.",
+                `Found token: '${this.peek().value}' instead of '}'.`,
+                ["}"],
+                "Example: set { key: value }"
+            );
+        }
+
+        return new SetNode(token, elements);
+    }
+
+    private if_let_expression(args: Args): IfLetNode {
+        const token = this.peek();
+        if (!this.match(TokenType.If)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'if' to begin if let expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        if (!this.match(TokenType.Let)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'if' to begin if let expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        const pattern = this.pattern(args);
+
+        if (!pattern) this.error(ErrorCodes.parser.SYNTAX_ERROR, "Empty pattern")
+
+        if (!this.match(TokenType.Equals)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'if' to begin if let expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        if (!this.match(TokenType.LeftParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_PAREN,
+                "Expected '(' after 'if'.",
+                "The condition of an 'if' statement must be enclosed in parentheses.",
+                `Found token: '${this.peek().value}' instead of '('.`,
+                ["'('"],
+                "'if (x > 0) { ... }'"
+            );
+        }
+
+        const exppression = this.expression(args);
+
+        if (!this.match(TokenType.RightParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                "Expected ')' after the condition in 'if' statement.",
+                "You must close the condition expression with a right parenthesis ')'.",
+                `Found token: '${this.peek().value}' instead of ')'.`,
+                [")"],
+                "'if (x > 0) { ... }'"
+            );
+        }
+
+        const consequent = this.block(args);
+
+        if (this.match(TokenType.Else)) {
+            const alternate = this.block(args);
+            return new IfLetNode(token, pattern, exppression, consequent, alternate);
+        }
+
+        return new IfLetNode(token, pattern, exppression, consequent);
+    }
+
+    private match_expression(args: Args): MatchNode {
+        const token = this.peek();
+        if (!this.match(TokenType.Match)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'match' to begin match expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        if (!this.match(TokenType.LeftParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_PAREN,
+                "Expected '(' after 'if'.",
+                "The condition of an 'if' statement must be enclosed in parentheses.",
+                `Found token: '${this.peek().value}' instead of '('.`,
+                ["'('"],
+                "'if (x > 0) { ... }'"
+            );
+        }
+
+        const expression = this.expression(args);
+
+        if (!this.match(TokenType.RightParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                "Expected ')' after the condition in 'if' statement.",
+                "You must close the condition expression with a right parenthesis ')'.",
+                `Found token: '${this.peek().value}' instead of ')'.`,
+                [")"],
+                "'if (x > 0) { ... }'"
+            );
+        }
+
+        const body: MatchArmNode[] = [];
+
+        if (!this.match(TokenType.LeftBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected '{' to start the block body.",
+                "Ensure the block is enclosed within curly braces '{ }'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["'{'"],
+                "'{ statement1; statement2; }'"
+            );
+        }
+
+        while (!this.check(TokenType.RightBrace) && !this.is_at_end()) {
+            body.push(this.match_arm(args));
+
+            if (!this.match(TokenType.Comma)) {
+                if (!this.check(TokenType.RightBrace)) {
+                    this.error(
+                        ErrorCodes.parser.MISSING_COMMA,
+                        "Expected ',' after match's arm.",
+                        "Enum variants must be separated by commas.",
+                        `Found token: '${this.peek().value}' instead of ','`,
+                        [","],
+                        "'enum Color { Red, Green, Blue }'"
+                    );
+                }
+            }
+        }
+
+        if (!this.match(TokenType.RightBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_BRACE,
+                "Expected '}' to close the block body.",
+                "Ensure the block ends with a closing curly brace '}'.",
+                `Found token: '${this.peek().value}' instead of '}'`,
+                ["'}'"],
+                "'{ statement1; statement2; }'"
+            );
+        }
+
+        return new MatchNode(token, expression, body);
+    }
+
+    private match_arm(args: Args): MatchArmNode {
+        const token = this.peek();
+        let pattern = this.pattern(args);
+
+        if (!pattern) this.error(ErrorCodes.parser.SYNTAX_ERROR, "Empty pattern")
+
+        let guardExpr: ASTNode | null = null;
+        if (this.match(TokenType.If)) {
+            guardExpr = this.expression(args);
+        }
+
+        if (!this.match(TokenType.EqArrow)) {
+            this.error(
+                ErrorCodes.parser.MISSING_EQ_ARROW,
+                "Expected '=>' after pattern (and optional guard).",
+                "Each match arm must use '=>' between the pattern and result expression.",
+                `Found token: '${this.peek().value}' instead of '=>'`,
+                ["'=>'"],
+                "'1 => \"one\"'"
+            );
+        }
+
+        let exp_block = this.statement({
+            ...args,
+            statement: false
+        })
+
+        return new MatchArmNode(token, pattern, guardExpr, exp_block)
+    }
+
+    private pattern(args: Args): ASTNode | null {
+        const token = this.peek();
+
+        switch (token.type) {
+            case TokenType.Number:
+            case TokenType.String:
+            case TokenType.True:
+            case TokenType.False:
+                return this.constants(args);
+            case TokenType.Identifier: {
+                if (this.peek().value == "_") {
+                    this.match(TokenType.Identifier);
+                    return new WildcardNode(token)
+                }
+
+                const path = this.scoped_identifier(args);
+
+                if (this.match(TokenType.LeftParen)) {
+                    const patterns = this.pattern_list(args);
+                    if (!this.match(TokenType.RightParen)) {
+                        this.error(
+                            ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                            "Missing '('"
+                        );
+                    }
+
+                    return new EnumPatternNode(token, path, patterns)
+                }
+
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    private pattern_list(args: Args) {
+        const patterns = [];
+
+        do {
+            const pattern = this.pattern(args);
+
+            if (pattern)
+                patterns.push(pattern)
+        } while (this.match(TokenType.Comma));
+
+        return patterns;
+    }
+
+    private struct_initializer(args: Args) {
         if (!this.match(TokenType.LeftBrace)) {
             this.error(
                 ErrorCodes.parser.MISSING_LEFT_BRACE,
@@ -1625,7 +2130,7 @@ export class Parser {
             );
         }
 
-        const fields = this.struct_fields();
+        const fields = this.struct_fields(args);
 
         if (!this.match(TokenType.RightBrace)) {
             this.error(
@@ -1641,7 +2146,7 @@ export class Parser {
         return fields;
     }
 
-    private struct_fields(): StructFieldNode[] {
+    private struct_fields(args: Args): StructFieldNode[] {
         const fields: StructFieldNode[] = [];
 
         if (this.check(TokenType.RightBrace)) {
@@ -1649,7 +2154,7 @@ export class Parser {
         }
 
         while (true) {
-            fields.push(this.struct_field());
+            fields.push(this.struct_field(args));
 
             if (this.match(TokenType.Comma)) {
                 if (this.check(TokenType.RightBrace)) {
@@ -1663,17 +2168,75 @@ export class Parser {
         return fields;
     }
 
-    private struct_field() {
-        const iden = this.identifier();
+    private struct_field(args: Args) {
+        const iden = this.identifier(args);
         let expr;
 
         if (this.match(TokenType.Colon)) {
-            expr = this.assignment_expression()
+            expr = this.expression(args)
         }
 
         return new StructFieldNode(this.peek(), iden, expr)
     }
 
+    private impl(args: Args): ImplNode {
+        const token = this.peek();
+
+        if (!this.match(TokenType.Impl)) {
+            this.error(
+                ErrorCodes.parser.EXPECTED_STRUCT_KEYWORD,
+                "Expected 'impl' keyword to begin struct declaration.",
+                "Struct declarations must start with the 'struct' keyword.",
+                `Found token: '${this.peek().value}' instead of 'struct'`,
+                ["struct"],
+                "'impl Person { ... }'"
+            );
+        }
+
+        const iden = this.identifier(args);
+
+        if (!this.match(TokenType.LeftBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected '{' to begin struct body.",
+                "Struct declarations require a body enclosed in curly braces.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'struct Person { name: string; age: number; }'"
+            );
+        }
+
+        const body = this.impl_body(args)
+
+        if (!this.match(TokenType.RightBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_BRACE,
+                "Expected '}' to close struct body.",
+                "Struct declarations must end with a closing curly brace '}'.",
+                `Found token: '${this.peek().value}' instead of '}'`,
+                ["}"],
+                "'struct Person { name: string; age: number; }'"
+            );
+        }
+
+        return new ImplNode(token, iden, body)
+    }
+
+    private impl_body(args: Args): Array<FunctionDecNode | MemberDecNode> {
+        const fields: Array<FunctionDecNode | MemberDecNode> = [];
+
+        while (!this.check(TokenType.RightBrace)) {
+            let fun = this.function_declaration(args);
+
+            if (fun.params?.parameters[0].identifier.name == "self") {
+                fun = new MemberDecNode(this.peek(), fun)
+            }
+
+            fields.push(fun);
+        }
+
+        return fields;
+    }
     /**
 struct_statement ::= export_modifier? "struct" identifier (type_parameters)? ("impl" trait_impl ("," trait_impl)*)? "{" (struct_body)? "}"
 trait_impl ::= identifier (type_arguments)?
@@ -1684,7 +2247,8 @@ struct_member ::= struct_field | struct_method
 struct_field ::= ("mut")? identifier type_annotation
 struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? function_body
      */
-    private struct_statement(): StructNode {
+    private struct_statement(args: Args): StructNode {
+        const token = this.peek();
         if (!this.match(TokenType.Struct)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_STRUCT_KEYWORD,
@@ -1715,7 +2279,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
 
         // Parse type parameters if present: "<" type_parameter ("," type_parameter)* ">"
         if (this.match(TokenType.LT)) {
-            tp = this.type_parameters();
+            tp = this.type_parameters(args);
 
             if (!this.match(TokenType.GT)) {
                 this.error(
@@ -1747,7 +2311,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             );
         }
 
-        let body = this.struct_body();
+        let body = this.struct_body(args);
 
         if (!this.match(TokenType.RightBrace)) {
             this.error(
@@ -1763,33 +2327,22 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         // Optional semicolon after struct declaration
         if (this.match(TokenType.SemiColon)) { }
 
-        return new StructNode(this.peek(), name, body, false, tp);
+        return new StructNode(token, name, body, false, tp);
     }
 
     // struct_body ::= (struct_member)*
-    private struct_body(): ASTNode[] {
+    private struct_body(args: Args): ASTNode[] {
         const fields: ASTNode[] = [];
 
         while (!this.check(TokenType.RightBrace)) {
-
-            if (this.check(TokenType.Fun)) {
-                let fun = this.function_declaration();
-
-                if (fun.params?.parameters[0].identifier.name == "self") {
-                    fun = new MemberDecNode(this.peek(), fun)
-                }
-
-                fields.push(fun);
-            } else {
-                fields.push(this.field());
-            }
+            fields.push(this.field(args));
         }
 
         return fields;
     }
 
     // struct_field ::= ("mut")? identifier type_annotation ";"
-    private field(): FieldNode {
+    private field(args: Args): FieldNode {
         let mutable = false;
         if (this.match(TokenType.Mut)) {
             mutable = true;
@@ -1807,10 +2360,10 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             );
         }
 
-        const identifier = this.identifier();
+        const identifier = this.identifier(args);
 
         // Parse the type annotation
-        let data_type = this.type_annotation();
+        let data_type = this.type_annotation(args);
 
         // Expect a semicolon after the field declaration
         if (!this.match(TokenType.SemiColon)) {
@@ -1827,7 +2380,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return new FieldNode(this.peek(), identifier, mutable, data_type);
     }
 
-    private enum_statement(): EnumNode {
+    private enum_statement(args: Args): EnumNode {
         // Expect the 'enum' keyword
         if (!this.match(TokenType.Enum)) {
             this.error(
@@ -1858,7 +2411,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         // Parse optional type parameters
         let tp: TypeParameterNode[] | undefined = undefined;
         if (this.match(TokenType.LT)) {
-            tp = this.type_parameters();
+            tp = this.type_parameters(args);
             if (!this.match(TokenType.GT)) {
                 this.error(
                     ErrorCodes.parser.MISSING_GREATER_THAN,
@@ -1883,7 +2436,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             );
         }
 
-        let body = this.enum_body();
+        let body = this.enum_body(args);
 
         if (!this.match(TokenType.RightBrace)) {
             this.error(
@@ -1902,7 +2455,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return new EnumNode(this.peek(), name, body, false, tp);
     }
 
-    private enum_body(): EnumVariantNode[] {
+    private enum_body(args: Args): EnumVariantNode[] {
         const variants: EnumVariantNode[] = [];
 
         while (!this.check(TokenType.RightBrace)) {
@@ -1926,7 +2479,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                 value = new StructNode(
                     this.peek(),
                     name,
-                    this.struct_body()
+                    this.struct_body(args)
                 );
 
                 if (!this.match(TokenType.RightBrace)) {
@@ -1942,7 +2495,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             }
             // Parse tuple variant if present
             else if (this.match(TokenType.LeftParen)) {
-                value = new TupleVariantNode(this.peek(), this.tuple_payload());
+                value = new TupleVariantNode(this.peek(), this.tuple_payload(args));
 
                 if (!this.match(TokenType.RightParen)) {
                     this.error(
@@ -1976,11 +2529,11 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return variants;
     }
 
-    private tuple_payload(): ASTNode[] {
+    private tuple_payload(args: Args): ASTNode[] {
         const types: ASTNode[] = [];
 
         do {
-            types.push(this.type());
+            types.push(this.type(args));
         } while (this.match(TokenType.Comma));
 
         return types;
@@ -1992,7 +2545,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
     module_item ::= (export_modifier)? source_element
     export_modifier ::= "export"
     */
-    private module_statement(): ModuleNode {
+    private module_statement(args: Args): ModuleNode {
         // Expect the 'module' keyword
         if (!this.match(TokenType.Module)) {
             this.error(
@@ -2017,7 +2570,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             );
         }
 
-        let identifier = this.identifier();
+        let identifier = this.identifier(args);
 
         // Parse module body
         if (!this.match(TokenType.LeftBrace)) {
@@ -2031,7 +2584,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             );
         }
 
-        let body = this.module_body();
+        let body = this.module_body(args);
 
         if (!this.match(TokenType.RightBrace)) {
             this.error(
@@ -2047,7 +2600,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return new ModuleNode(this.peek(), identifier, body);
     }
 
-    private module_body(): ASTNode[] {
+    private module_body(args: Args): ASTNode[] {
         const items: ASTNode[] = [];
 
         while (!this.check(TokenType.RightBrace)) {
@@ -2058,7 +2611,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                 is_public = true;
             }
 
-            const item = this.source_element();
+            const item = this.source_element(args);
 
             // Error handling for exported nodes
             if (is_public) {
@@ -2083,7 +2636,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
     }
 
     // import_statement ::= "import" identifier ";"
-    private import(): ImportNode {
+    private import(args: Args): ImportNode {
         // Check for 'import' keyword
         if (!this.match(TokenType.Import)) {
             this.error(
@@ -2097,7 +2650,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         }
 
         // Parse the identifier (module or resource name)
-        let identifier = this.identifier();
+        let identifier = this.identifier(args);
 
         // Check for the semicolon at the end of the import statement
         if (!this.match(TokenType.SemiColon)) {
@@ -2122,7 +2675,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
     use_item ::= identifier ("as" identifier)?
         | "*"
     */
-    private use(): UseNode {
+    private use(args: Args): UseNode {
         // Check for 'use' keyword
         if (!this.match(TokenType.Use)) {
             this.error(
@@ -2138,12 +2691,12 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         const use_token = this.peek();
 
         // Parse the path
-        let path = this.use_path();
+        let path = this.use_path(args);
         let list = undefined, alias = undefined;
 
         // Check for left brace, indicating a use list
         if (this.match(TokenType.LeftBrace)) {
-            list = this.use_list();
+            list = this.use_list(args);
             if (!this.match(TokenType.RightBrace)) {
                 this.error(
                     ErrorCodes.parser.MISSING_RIGHT_BRACE,
@@ -2184,7 +2737,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return new UseNode(use_token, path, list, alias);
     }
 
-    private use_path(): UsePathNode {
+    private use_path(args: Args): UsePathNode {
         const path = [];
 
         do {
@@ -2211,17 +2764,17 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         return new UsePathNode(this.peek(), path);
     }
 
-    private use_list() {
+    private use_list(args: Args) {
         const items: UseItemNode[] = [];
 
         do {
-            items.push(this.use_item())
+            items.push(this.use_item(args))
         } while (this.match(TokenType.Comma))
 
         return new UseListNode(this.peek(), items);
     }
 
-    private use_item(): UseItemNode {
+    private use_item(args: Args): UseItemNode {
         // Check for identifier (the name of the item being used)
         if (!this.match(TokenType.Identifier)) {
             this.error(

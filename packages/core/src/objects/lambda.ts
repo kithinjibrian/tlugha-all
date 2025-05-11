@@ -9,4 +9,8 @@ export class LambdaType extends Type<LambdaNode> {
             }
         });
     }
+
+    *[Symbol.iterator]() {
+        yield this;
+    }
 }

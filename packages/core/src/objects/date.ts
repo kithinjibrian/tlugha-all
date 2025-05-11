@@ -5,4 +5,8 @@ export class DateType extends Type<Date> {
         super("date", value, {
         });
     }
+
+    *[Symbol.iterator]() {
+        yield this;
+    }
 }

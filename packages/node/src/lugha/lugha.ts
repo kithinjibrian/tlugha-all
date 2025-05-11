@@ -26,10 +26,10 @@ export async function lugha({
     const code = readFileSync(file_path, 'utf-8')
 
     try {
-        let lexer = new Lexer(code);
+        let lexer = new Lexer(code, file_path);
         let tokens = lexer.tokenize();
 
-        let parser = new Parser(tokens);
+        let parser = new Parser(tokens, file_path);
         let ast = parser.parse();
 
         const engine = new EngineNode(

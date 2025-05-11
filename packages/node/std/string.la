@@ -1,0 +1,3 @@
+fun format<T>(str: string, ...args: (T)): string {
+    return str.format(...args);
+}

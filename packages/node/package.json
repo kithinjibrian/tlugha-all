@@ -5,7 +5,7 @@
     "module": "dist/main.mjs",
     "types": "dist/main.d.ts",
     "scripts": {
-        "dev": "npx ts-node src/main.ts",
+        "dev": "nodemon --watch src --ext ts --exec ts-node src/main.ts",
         "build": "tsc"
     },
     "devDependencies": {

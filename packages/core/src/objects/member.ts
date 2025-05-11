@@ -9,4 +9,8 @@ export class MemberType extends Type<MemberDecNode> {
             }
         });
     }
+
+    *[Symbol.iterator]() {
+        yield this;
+    }
 }

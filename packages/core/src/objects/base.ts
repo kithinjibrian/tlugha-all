@@ -1,8 +1,17 @@
+import { Engine, Frame, Module } from "../types";
+
+export interface Env {
+    engine: Engine,
+    frame: Frame,
+    module: Module
+}
+
 export interface Operations<T> {
     getType?: () => string;
     getValue?: () => any;
     inc?: () => Type<T>;
     dec?: () => Type<T>;
+    not?: () => Type<boolean>;
     add?: (obj: Type<T>) => Type<T>;
     minus?: (obj: Type<T>) => Type<T>;
     divide?: (obj: Type<T>) => Type<T>;
@@ -11,18 +20,21 @@ export interface Operations<T> {
     str?: (indentLevel?: number) => string;
     lt?: (obj: Type<T>) => Type<boolean>;
     gt?: (obj: Type<T>) => Type<boolean>;
+    lte?: (obj: Type<T>) => Type<boolean>;
+    gte?: (obj: Type<T>) => Type<boolean>;
     eq?: (obj: Type<T>) => Type<boolean>;
     neq?: (obj: Type<T>) => Type<boolean>;
     or?: (obj: Type<boolean>) => Type<boolean>;
     and?: (obj: Type<boolean>) => Type<boolean>;
-    get?: (obj: Type<any>, args: Type<any>[]) => any;
     set?: (index: Type<any>, new_value: Type<any>) => void;
+    get?: (env: Env, obj: Type<any>, args: Type<any>[]) => any;
 }
 
 export abstract class Type<T> {
     public type: string;
-    protected value: T;
+    public value: T;
     protected readonly operations: Operations<T>;
+    abstract [Symbol.iterator](): Iterator<any>;
 
     constructor(type: string, value: T, operations: Operations<T>) {
         this.type = type;
@@ -52,9 +64,9 @@ export abstract class Type<T> {
         return JSON.stringify(this.value, null, 2);
     }
 
-    get(obj: Type<any>, args: Type<any>[]): any {
+    get(env: Env, obj: Type<any>, args: Type<any>[]): any {
         if (this.operations.get) {
-            return this.operations.get(obj, args);
+            return this.operations.get(env, obj, args);
         }
         throw new Error(`Operation 'get' not supported for type ${this.type}`);
     }
@@ -115,6 +127,20 @@ export abstract class Type<T> {
         throw new Error(`Operation 'gt' not supported for type ${this.type}`);
     }
 
+    lte(obj: Type<T>): Type<boolean> {
+        if (this.operations.lte) {
+            return this.operations.lte(obj);
+        }
+        throw new Error(`Operation 'lt' not supported for type ${this.type}`);
+    }
+
+    gte(obj: Type<T>): Type<boolean> {
+        if (this.operations.gte) {
+            return this.operations.gte(obj);
+        }
+        throw new Error(`Operation 'gt' not supported for type ${this.type}`);
+    }
+
     eq(obj: Type<T>): Type<boolean> {
         if (this.operations.eq) {
             return this.operations.eq(obj);
@@ -127,6 +153,13 @@ export abstract class Type<T> {
             return this.operations.neq(obj);
         }
         throw new Error(`Operation 'neq' not supported for type ${this.type}`);
+    }
+
+    not(): Type<boolean> {
+        if (this.operations.not) {
+            return this.operations.not();
+        }
+        throw new Error(`Operation 'not' not supported for type ${this.type}`);
     }
 
     inc(): Type<T> {

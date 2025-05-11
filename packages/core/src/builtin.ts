@@ -1,5 +1,6 @@
 import axios from "axios"
-import { Type, StringType, Frame, NumberType, Engine } from "./types"
+import { Type, Frame, NumberType, Engine } from "./types"
+import { Panic } from "./error/panic"
 
 export type Builtin =
     {
@@ -29,23 +30,28 @@ export const builtin: Record<string, Builtin> = {
             return new Date();
         }
     },
+    __re_test__: {
+        type: "function",
+        signature: "<T, U>(args: T) -> U",
+        exec: (args: any[]) => {
+            const regex = new RegExp(args[0]);
+            return regex.test(args[1]);
+        }
+    },
     __print__: {
         type: "function",
         signature: "<T, U>(args: T) -> U",
-        filter: (args) => args.map(i => i),
         exec: (args: any[]) => {
-            let formatted = args[0].value;
-            const values = args[1];
-
-            let index = 0;
-            formatted = formatted.replace(/\{\}/g, () => {
-                const val = index < values.value.length ? values.value[index++] : new StringType("{}");
-                return val.str();
-            });
-
-            console.log(formatted);
-
-            return null;
+            console.log(args[0]);
+        }
+    },
+    __panic__: {
+        type: "function",
+        signature: "<T, U>(args: T) -> U",
+        exec: (args: any[]) => {
+            throw new Panic(`PANIC:
+${args[0]}
+`);
         }
     },
     __set_timeout__: {
@@ -62,8 +68,7 @@ export const builtin: Record<string, Builtin> = {
             await engine.execute_function(
                 args[2],
                 [new NumberType(90)],
-                frame,
-                args[1]
+                frame
             )
 
             return null;
@@ -77,7 +82,7 @@ export const builtin: Record<string, Builtin> = {
             try {
                 const res = await axios.get(args[0], args[1]);
                 const { config, request, ...rest } = res;
-                return rest;
+                return JSON.stringify(rest);
             } catch (e: any) {
                 throw e;
             }

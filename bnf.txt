@@ -1,0 +1,248 @@
+Program ::= (source_elements)? <EOF>
+source_elements ::= (source_element)+
+source_element ::= function_declaration
+                | statement
+
+statement ::= variable_statement
+    | import_statement
+    | use_statement
+    | empty_statement
+    | iteration_statement
+    | continue_statement
+    | break_statement
+    | return_statement
+    | expression_statement
+    | struct_statement
+    | enum_statement
+    | trait_statement
+    | module_statement
+    | impl_statement
+
+variable_statement ::= "let" variable_declaration ";"
+variable_declaration ::= ("mut")? variable_pattern (type_annotation)? (initialiser)?
+variable_pattern ::= identifier
+    | tuple_pattern
+    | struct_pattern
+    | enum_pattern
+tuple_pattern ::= "(" variable_pattern {"," variable_pattern}* ")"
+struct_pattern ::= scoped_identifier { field_pattern }
+enum_pattern ::= scoped_identifier { field_pattern }
+field_pattern ::= ("mut")? identifier ":" variable_pattern
+type_annotation ::= ":" type
+type ::= primitive
+    | "Self"
+    | "Array" "<" type ">"
+    | "Set" "<" type ">"
+    | "Map" "<" type "," type ">"
+    | "(" type ("," type)* ")"
+primitive ::= number
+    | string
+    | bool
+    | unit
+    | struct_types
+initialiser ::= "=" assignment_expression
+empty_statement ::= ";"
+expression_statement ::= expression ";"
+iteration_statement ::= "while" "(" expression ")" statement
+    | "for" "(" "let" variable_declaration "in" expression ")" statement
+continue_statement ::= "continue" ";"
+break_statement ::= "break" ";"
+return_statement ::= "return" (expression)? ";"
+function_declaration ::= "fun" identifier (type_parameters)? "(" (parameter_list)? ")" (type_annotation)? function_body
+type_parameters ::= "<" type_parameter ("," type_parameter)* ">"
+type_parameter ::= identifier (":" identifier ("," identifier)*)?
+function_body ::= "{" (source_elements)? "}"
+parameter_list ::= parameter ("," parameter)*
+parameter ::= ("mut")? identifier (type_annotation)?
+import_statement ::= "import" identifier ";"
+
+trait_statement ::= "trait" identifier (type_parameters)? "{" (trait_body)? "}"
+trait_body ::= (trait_member ";")*
+trait_member ::= trait_method
+trait_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? ("{" function_body "}")? ";"
+
+impl_statement ::= "impl" impl_target "{" { impl_item } "}"
+
+impl_target ::= type
+              | trait "for" type
+
+trait ::= identifier
+        | path
+
+struct_statement ::= export_modifier? "struct" identifier (type_parameters)? "{" (struct_body)? "}"
+type_parameters ::= "<" type_parameter ("," type_parameter)* ">"
+type_arguments ::= "<" type ("," type)* ">"
+struct_body ::= (struct_field)*
+struct_field ::= ("mut")? identifier type_annotation ";"
+struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? function_body
+
+enum_statement ::= export_modifier? "enum" identifier (type_parameters)? "{" (enum_variants)? "}"
+enum_variants ::= enum_variant ("," enum_variant)*
+enum_variant ::= identifier (enum_payload)?
+enum_payload ::= "(" type ("," type)* ")"
+
+use_statement ::= "use" use_path ("as" identifier)? ";"
+    | "use" use_path "{" use_list "}"";"
+use_path ::= identifier ("::" identifier)*
+use_list ::= use_item ("," use_item)* 
+use_item ::= identifier ("as" identifier)?
+    | "*"
+
+module_statement ::= (public_modifier)? "module" identifier "{" (module_body)? "}"
+module_body ::= (module_item)*
+module_item ::= (public_modifier)? source_element
+public_modifier ::= "public"
+
+expression ::= assignment_expression ("," assignment_expression)*
+
+assignment_expression ::= range_expression
+    | unary_expression assignment_operator assignment_expression
+
+assignment_operator ::= =
+    | *=
+    | /=
+    | %=
+    | +=
+    | -=
+    | <<=
+    | >>=
+    | &=
+    | ^=
+    | |=
+
+range_expression ::= conditional_expression (range_operator conditional_expression?)?
+    | range_operator conditional_expression?
+
+range_operator ::= ".."
+    | "..="
+
+conditional_expression ::= logical_or_expression ("?" assignment_expression ":" assignment_expression)?
+
+logical_or_expression ::= logical_and_expression ("||" logical_and_expression)*
+
+logical_and_expression ::= bitwise_or_expression ("&&" bitwise_or_expression)*
+
+bitwise_or_expression ::= bitwise_xor_expression ("|" bitwise_or_expression)*
+
+bitwise_xor_expression ::= bitwise_and_expression ("^" bitwise_and_expression)*
+
+bitwise_and_expression ::= equality_expression ("&" equality_expression)*
+
+equality_expression ::= relational_expression (equality_operator relational_expression)*
+
+equality_operator ::= ==
+    | !=
+
+relational_expression ::= shift_expression (relational_operator shift_expression)*
+
+relational_operator ::= <
+    | >
+    | <=
+    | >=
+
+shift_expression ::= additive_expression (shift_operator additive_expression)*
+
+shift_operator ::= <<
+    | >>
+
+additive_expression ::= multiplicative_expression (additive_operator multiplicative_expression)*
+
+additive_operator ::= +
+    | -
+
+multiplicative_expression ::= unary_expression (multiplicative_operator unary_expression)*
+
+multiplicative_operator ::= *
+    | /
+    | %
+
+unary_expression ::= postfix_expression
+    | (unary_operator unary_expression)+
+
+unary_operator ::= +
+    | -
+    | ~
+    | !
+
+postfix_expression ::= primary_expression
+    | postfix_expression "[" expression "]"
+    | postfix_expression "(" (argument_list)? ")"
+    | postfix_expression "." identifier
+    | postfix_expression "." identifier "(" (argument_list)? ")"
+
+primary_expression ::= scoped_identifier
+    | constants
+    | block
+    | if_expression
+    | if_let_expression
+    | array_literal
+    | tuple_literal
+    | set_literal
+    | map_literal
+    | struct_initializer
+    | lambda_expression
+    | match_expression
+    | ( expression )
+
+scoped_identifier ::= identifier  ("::" identifier)*
+
+constants ::= number
+    | string
+    | boolean
+
+block ::= "{" statement* [expression] "}"
+
+if_expression ::= "if" "(" expression ")" statement ("else" statement)?
+
+if_let_expression ::= "if" "let" "pattern" = "(" expression ")" statement ("else" statement)?
+
+array_literal ::= "[" (expression ("," expression)*)? "]"
+
+tuple_literal ::= "(" expression "," (expression ",")* ")"
+
+set_literal ::= "set" "{" expression ("," expression)* "}"
+
+map_literal ::= "map" "{" (map_entry ("," map_entry)*)? "}"
+
+map_entry ::= expression ":" expression
+
+struct_initializer ::= identifier "{" (struct_fields)? "}"
+struct_fields ::= struct_field ("," struct_field)*  
+struct_field ::= identifier ":" expression
+
+range_expression ::= expression ".." expression
+    | expression "..=" expression
+
+lambda_expression ::= "fun" "(" parameter_list ")" (type_annotation)? "->" expression
+    | "fun" "(" parameter_list ")" (type_annotation)? "->" function_body
+
+<match_expression>      ::= "match" <expression> "{" <match_arm>+ "}"
+
+<match_arm>       ::= <pattern> [ "if" <guard_expr> ] "=>" <expression_or_block> [ "," ]
+
+<pattern>         ::= <literal_pattern>
+                    | <identifier_pattern>
+                    | <wildcard_pattern>
+                    | <tuple_pattern>
+                    | <struct_pattern>
+                    | <enum_pattern>
+                    | <range_pattern>
+                    | <or_pattern>
+
+<or_pattern>      ::= <pattern> "|" <pattern> { "|" <pattern> }
+
+<guard_expr>      ::= ... (boolean expression)
+<expression_or_block> ::= <expression> | <block>
+
+<literal_pattern> ::= <number> | <string> | <char> | <boolean>
+<identifier_pattern> ::= <identifier> [ "@" <subpattern> ]
+<wildcard_pattern>   ::= "_"
+<tuple_pattern>      ::= "(" <pattern_list> ")"
+<struct_pattern>     ::= <path> "{" <field_pattern_list> "}"
+<enum_pattern>       ::= <path> "(" <pattern_list> ")"
+<range_pattern>      ::= <literal> ".." <literal> | <literal> "..=" <literal>
+
+<pattern_list>       ::= <pattern> { "," <pattern> }
+<field_pattern_list> ::= <field_pattern> { "," <field_pattern> }
+
+<field_pattern>      ::= <identifier> [ ":" <pattern> ]

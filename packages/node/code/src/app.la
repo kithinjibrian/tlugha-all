@@ -1,5 +1,13 @@
+import json;
+
+use json::{ parse, Value };
+
 use std::io::{ print };
 
 fun main(): unit {
-    print("{}", "hello world");
+    let x = "1000";
+
+    let a = parse(x).unwrap();
+
+    print("{}", a[0]);
 }

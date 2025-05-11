@@ -1,0 +1,82 @@
+use std::io::{ print };
+use std::err::{ panic };
+use super::parser::{ AST };
+
+enum Value {
+    Null,
+    Bool(bool),
+    String(string),
+    Number(number),
+    Array(Array<Value>),
+    Object(Map<string, Value>)
+}
+
+impl Value {
+    fun __index__(self: Self, key: string): unit {
+        match(self) {
+            Value::Object(obj) => obj.get(key).unwrap().unwrap(),
+            Value::Array(arr) => arr.at(key.parse().unwrap()).unwrap().unwrap(),
+            Value::String(s) => s.at(key.parse().unwrap()).unwrap(),
+            _ => panic("{} can't be indexed.", self)
+        }
+    }
+
+    fun unwrap(self: Self): unit {
+        match(self) {
+            Value::Object(obj) => obj,
+            Value::Array(arr) => arr,
+            Value::Number(n) => n,
+            Value::String(s) => s,
+            Value::Bool(b) => b,
+            Value::Null => panic("called `Value::unwrap()` on a `Null` value")
+        }
+    }
+}
+
+fun eval(ast: AST): Value {
+    match(ast) {
+        AST::Null => Value::Null,
+        AST::True => Value::Bool(true),
+        AST::False => Value::Bool(false),
+        AST::String(s) => Value::String(s),
+        AST::Number(n) => Value::Number(n),
+        AST::Object(properties) => {
+            let m = map {};
+
+            for(let prop in properties) {
+                match(prop) {
+                    AST::Property(key, value) => {
+                        m.insert(key, eval(value))
+                    }
+                }
+            }
+
+            Value::Object(m)
+        },
+        AST::Array(elements) => {
+            let a = [];
+
+            for(let elem in elements) {
+                a.push(eval(elem));
+            }
+
+            Value::Array(a)
+        }
+    }
+}
+
+struct Exec {
+    ast: AST;
+}
+
+impl Exec {
+    fun new(ast: AST): Exec {
+        return Exec {
+            ast
+        };
+    }
+
+    fun run(self: Self): Value {
+        eval(self.ast)
+    }
+}

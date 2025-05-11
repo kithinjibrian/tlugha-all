@@ -7,7 +7,9 @@ struct Req {
 struct Res {
     status: number;
     mut data: string;
+}
 
+impl Res {
     fun new(): Res {
         return Res {
             status: 200,
@@ -34,7 +36,9 @@ struct Handler {
 
 struct Server {
     routes: Array<Handler>;
+}
 
+impl Server {
     fun new(): Server {
         return Server {
             routes: []

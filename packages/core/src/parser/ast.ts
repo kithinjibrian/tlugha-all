@@ -1,4 +1,4 @@
-import { Frame, Module, Token } from "../types";
+import { Frame, Module, StructType, Token } from "../types";
 
 export interface ASTVisitor {
     before_accept?(node: ASTNode, args?: Record<string, any>): any;
@@ -6,7 +6,10 @@ export interface ASTVisitor {
     visitNumber?(node: NumberNode, args?: Record<string, any>): any;
     visitBoolean?(node: BooleanNode, args?: Record<string, any>): any;
     visitString?(node: StringNode, args?: Record<string, any>): any;
-    visitNull?(node: NullNode, args?: Record<string, any>): any;
+    visitIfLet?(node: IfLetNode, args?: Record<string, any>): any;
+    visitMatch?(node: MatchNode, args?: Record<string, any>): any;
+    visitMatchArm?(node: MatchArmNode, args?: Record<string, any>): any;
+    visitEnumPattern?(node: EnumPatternNode, args?: Record<string, any>): any;
     visitProgram?(node: ProgramNode, args?: Record<string, any>): any;
     visitSourceElements?(node: SourceElementsNode, args?: Record<string, any>): any;
     visitBlock?(node: BlockNode, args?: Record<string, any>): any;
@@ -33,6 +36,7 @@ export interface ASTVisitor {
     visitSet?(node: SetNode, args?: Record<string, any>): any;
     visitTuple?(node: TupleNode, args?: Record<string, any>): any;
     visitStructInit?(node: StructInitNode, args?: Record<string, any>): any;
+    visitStructAlreadyInit?(node: StructAlreadyInitNode, args?: Record<string, any>): any;
     visitStructField?(node: StructFieldNode, args?: Record<string, any>): any;
     visitProperty?(node: PropertyNode, args?: Record<string, any>): any;
     visitBinaryOp?(node: BinaryOpNode, args?: Record<string, any>): any;
@@ -43,25 +47,28 @@ export interface ASTVisitor {
     visitCallExpression?(node: CallExpressionNode, args?: Record<string, any>): any;
     visitArrowExpression?(node: ArrowExpressionNode, args?: Record<string, any>): any;
     visitPostfixExpression?(node: PostfixExpressionNode, args?: Record<string, any>): any;
+    visitSpreadElement?(node: SpreadElementNode, args?: Record<string, any>): any;
     visitIdentifier?(node: IdentifierNode, args?: Record<string, any>): any;
+    visitWildcard?(node: WildcardNode, args?: Record<string, any>): any;
     visitScopedIdentifier?(node: ScopedIdentifierNode, args?: Record<string, any>): any;
     visitType?(node: TypeNode, args?: Record<string, any>): any;
     visitAssignment?(node: AssignmentNode, args?: Record<string, any>): any;
     visitTypeParameter?(node: TypeParameterNode, args?: Record<string, any>): any;
     visitGenericType?(node: GenericTypeNode, args?: Record<string, any>): any;
     visitStruct?(node: StructNode, args?: Record<string, any>): any;
+    visitImpl?(node: ImplNode, args?: Record<string, any>): any;
+    visitTagged?(node: TaggedNode, args?: Record<string, any>): any;
     visitField?(node: FieldNode, args?: Record<string, any>): any;
     visitEnum?(node: EnumNode, args?: Record<string, any>): any;
     visitEnumVariant?(node: EnumVariantNode, args?: Record<string, any>): any;
-    visitStructVariant?(node: StructVariantNode, args?: Record<string, any>): any;
     visitTupleVariant?(node: TupleVariantNode, args?: Record<string, any>): any;
-    visitConstantVariant?(node: ConstantVariantNode, args?: Record<string, any>): any;
     visitModule?(node: ModuleNode, args?: Record<string, any>): any;
     visitImport?(node: ImportNode, args?: Record<string, any>): any;
     visitUse?(node: UseNode, args?: Record<string, any>): any;
     visitUsePath?(node: UsePathNode, args?: Record<string, any>): any;
     visitUseList?(node: UseListNode, args?: Record<string, any>): any;
     visitUseItem?(node: UseItemNode, args?: Record<string, any>): any;
+    visitRangeExpression?(node: ASTNode, args?: Record<string, any>): any;
 }
 
 
@@ -153,9 +160,8 @@ export class ForNode extends ASTNodeBase {
 
     constructor(
         public token: Token | null,
-        public init: ASTNode | undefined,
-        public condition: ASTNode | undefined,
-        public update: ASTNode | undefined,
+        public variable: VariableStatementNode,
+        public expression: ASTNode,
         public body: ASTNode
     ) {
         super();
@@ -274,7 +280,7 @@ export class ParameterNode extends ASTNodeBase {
         public token: Token | null,
         public identifier: IdentifierNode,
         public variadic: boolean,
-        public data_type: ASTNode,
+        public data_type: ASTNode | null,
         public expression?: ASTNode,
         public value?: any
     ) {
@@ -372,7 +378,7 @@ export class ExpressionNode extends ASTNodeBase {
 
     constructor(
         public token: Token | null,
-        public expressions: ASTNode[]
+        public expression: ASTNode
     ) {
         super();
     }
@@ -417,7 +423,8 @@ export class StringNode extends ASTNodeBase {
 
     constructor(
         public token: Token | null,
-        public value: string
+        public value: string,
+        public is_raw = false
     ) {
         super();
     }
@@ -427,18 +434,70 @@ export class StringNode extends ASTNodeBase {
     }
 }
 
-export class NullNode extends ASTNodeBase {
-    type = 'Null';
+export class IfLetNode extends ASTNodeBase {
+    type = 'IfLet';
 
     constructor(
         public token: Token | null,
-        public value: string = "null"
+        public pattern: ASTNode,
+        public expression: ASTNode,
+        public consequent: ASTNode,
+        public alternate?: ASTNode
     ) {
         super();
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
-        return await visitor.visitNull?.(this, args);
+        return await visitor.visitIfLet?.(this, args);
+    }
+}
+
+export class MatchNode extends ASTNodeBase {
+    type = 'Match';
+
+    constructor(
+        public token: Token | null,
+        public expression: ASTNode,
+        public arms: MatchArmNode[],
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitMatch?.(this, args);
+    }
+}
+
+export class MatchArmNode extends ASTNodeBase {
+    type = 'MatchArm';
+
+    constructor(
+        public token: Token | null,
+        public pattern: ASTNode,
+        public guard: ASTNode | null,
+        public exp_block: ASTNode,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitMatchArm?.(this, args);
+    }
+}
+
+export class EnumPatternNode extends ASTNodeBase {
+    type = 'EnumPattern';
+
+    constructor(
+        public token: Token | null,
+        public path: ASTNode,
+        public patterns: ASTNode[]
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitEnumPattern?.(this, args);
     }
 }
 
@@ -518,6 +577,21 @@ export class StructInitNode extends ASTNodeBase {
     }
 }
 
+export class StructAlreadyInitNode extends ASTNodeBase {
+    type = 'StructAlreadyInit';
+
+    constructor(
+        public token: Token | null,
+        public struct: StructType,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitStructAlreadyInit?.(this, args);
+    }
+}
+
 export class StructFieldNode extends ASTNodeBase {
     type = 'StructField';
 
@@ -564,6 +638,23 @@ export class AssignmentExpressionNode extends ASTNodeBase {
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitAssignmentExpression?.(this, args);
+    }
+}
+
+export class RangeNode extends ASTNodeBase {
+    type = 'RangeExpression';
+
+    constructor(
+        public token: Token | null,
+        public start: ASTNode | null,
+        public end: ASTNode | null,
+        public is_inclusive: boolean,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitRangeExpression?.(this, args);
     }
 }
 
@@ -700,6 +791,35 @@ export class PostfixExpressionNode extends ASTNodeBase {
     }
 }
 
+export class SpreadElementNode extends ASTNodeBase {
+    type = 'SpreadElement';
+
+    constructor(
+        public token: Token | null,
+        public expression: ASTNode
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitSpreadElement?.(this, args);
+    }
+}
+
+export class WildcardNode extends ASTNodeBase {
+    type = 'Wildcard';
+
+    constructor(
+        public token: Token | null
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitWildcard?.(this, args);
+    }
+}
+
 export class IdentifierNode extends ASTNodeBase {
     type = 'Identifier';
 
@@ -794,6 +914,22 @@ export class AssignmentNode extends ASTNodeBase {
     }
 }
 
+export class ImplNode extends ASTNodeBase {
+    type = "Impl";
+
+    constructor(
+        public token: Token | null,
+        public iden: IdentifierNode,
+        public body: Array<FunctionDecNode | MemberDecNode>
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitImpl?.(this, args);
+    }
+}
+
 export class StructNode extends ASTNodeBase {
     type = "Struct";
 
@@ -810,6 +946,23 @@ export class StructNode extends ASTNodeBase {
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitStruct?.(this, args);
+    }
+}
+
+export class TaggedNode extends ASTNodeBase {
+    type = "Tagged";
+
+    constructor(
+        public token: Token | null,
+        public name: string,
+        public body: ASTNode,
+        public members: Array<FunctionDecNode | MemberDecNode> = []
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitTagged?.(this, args);
     }
 }
 
@@ -849,7 +1002,7 @@ export class EnumNode extends ASTNodeBase {
     }
 }
 
-export type EnumVariantValueNode = StructNode | TupleVariantNode | ConstantVariantNode;
+export type EnumVariantValueNode = StructNode | TupleVariantNode;
 
 export class EnumVariantNode extends ASTNodeBase {
     type = "EnumVariant";
@@ -868,18 +1021,6 @@ export class EnumVariantNode extends ASTNodeBase {
     }
 }
 
-export class StructVariantNode extends ASTNodeBase {
-    type = "StructVariant"
-
-    constructor(public token: Token | null, public fields: ASTNode[]) {
-        super()
-    }
-
-    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
-        return await visitor.visitStructVariant?.(this, args);
-    }
-}
-
 export class TupleVariantNode extends ASTNodeBase {
     type = "TupleVariant"
 
@@ -889,18 +1030,6 @@ export class TupleVariantNode extends ASTNodeBase {
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitTupleVariant?.(this, args);
-    }
-}
-
-export class ConstantVariantNode extends ASTNodeBase {
-    type = "ConstantVariant"
-
-    constructor(public token: Token | null, public types: ASTNode) {
-        super();
-    }
-
-    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
-        return await visitor.visitConstantVariant?.(this, args);
     }
 }
 

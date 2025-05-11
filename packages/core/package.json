@@ -16,7 +16,8 @@
     ],
     "scripts": {
         "dev": "npx ts-node src/main.ts",
-        "build": "tsup"
+        "build": "tsup",
+        "build:watch": "tsup --watch"
     },
     "devDependencies": {
         "ts-node": "^10.9.2",

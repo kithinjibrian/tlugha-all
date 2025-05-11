@@ -1,8 +1,12 @@
 import {
     add_builtins,
+    EnumModule,
     Extension,
     ExtensionStore,
-    id
+    id,
+    TaggedNode,
+    TupleVariantNode,
+    TypeNode
 } from "@kithinji/tlugha-core";
 
 import {
@@ -23,7 +27,7 @@ class UploadBuiltins extends Extension<ASTVisitor> {
     public name = "UploadBuiltins";
 
     constructor(
-        public std: string
+        public dir: string
     ) {
         super();
     }
@@ -45,7 +49,44 @@ class UploadBuiltins extends Extension<ASTVisitor> {
                 let module;
 
                 let cache = Cache.get_instance();
-                const wd = path.join(this.std, "../std");
+                const wd = path.join(this.dir, "../core");
+                const mod_path = path.join(wd, "__mod__.la")
+
+                if (cache.has_mod(mod_path)) {
+                    module = cache.get_mod(mod_path);
+                    module.children.map(mod => root.children.push(mod))
+                } else {
+                    module = new Module("core");
+                }
+
+                root.add_submodule(module);
+
+                if (!cache.has_mod(mod_path)) {
+                    cache.add_mod(mod_path, module);
+
+                    try {
+                        ExtensionStore.get_instance().unregister("UploadBuiltins")
+
+                        await lugha({
+                            module,
+                            rd: this.dir,
+                            file: "__mod__.la",
+                            wd,
+                        })
+
+                        ExtensionStore.get_instance().register(new UploadBuiltins(this.dir))
+
+                        module.children.map(mod => root.children.push(mod))
+                    } catch (error) {
+                        throw error;
+                    }
+                }
+            },
+            async ({ root }: { root: Module }) => {
+                let module;
+
+                let cache = Cache.get_instance();
+                const wd = path.join(this.dir, "../std");
                 const mod_path = path.join(wd, "__mod__.la")
 
                 if (cache.has_mod(mod_path)) {
@@ -65,12 +106,12 @@ class UploadBuiltins extends Extension<ASTVisitor> {
 
                         await lugha({
                             module,
-                            rd: this.std,
+                            rd: this.dir,
                             file: "__mod__.la",
                             wd,
                         })
 
-                        ExtensionStore.get_instance().register(new UploadBuiltins(this.std))
+                        ExtensionStore.get_instance().register(new UploadBuiltins(this.dir))
 
                     } catch (error) {
                         throw error;
@@ -131,3 +172,37 @@ export async function exec({
         Cache.get_instance().clear_cache()
     }
 }
+
+/*
+const result = new EnumModule("Result");
+                root.add_submodule(result);
+
+                result.frame.define("Ok", new TaggedNode(
+                    null,
+                    "Ok",
+                    new TupleVariantNode(
+                        null,
+                        [
+                            new TypeNode(
+                                null,
+                                "T"
+                            )
+                        ]
+                    )
+                ))
+
+                result.frame.define("Err", new TaggedNode(
+                    null,
+                    "Err",
+                    new TupleVariantNode(
+                        null,
+                        [
+                            new TypeNode(
+                                null,
+                                "E"
+                            )
+                        ]
+                    )
+                ))
+
+*/

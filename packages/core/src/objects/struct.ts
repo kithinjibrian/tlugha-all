@@ -1,11 +1,17 @@
-import { Type } from "./base";
+import { Engine } from "../types";
+import { Env, Type } from "./base";
 import { BoolType } from "./bool";
 import { FunctionType } from "./function";
 import { MemberType } from "./member";
 import { NumberType } from "./number";
 
 export class StructType extends Type<Record<string, Type<any>>> {
-    constructor(value: Record<string, Type<any>>, name: string = "") {
+    public name: string;
+
+    constructor(
+        value: Record<string, Type<any>>,
+        name: string = ""
+    ) {
         super("struct", value, {
             getValue: () => {
                 return Object.entries(value)
@@ -45,7 +51,7 @@ export class StructType extends Type<Record<string, Type<any>>> {
                 result += `${indent}}`;
                 return result;
             },
-            get: (obj: Type<string>, args: Type<any>[]) => {
+            get: (env: Env, obj: Type<string>, args: Type<any>[]) => {
                 const index = obj.getValue();
 
                 if (value[index]) {
@@ -65,5 +71,11 @@ export class StructType extends Type<Record<string, Type<any>>> {
                     throw new Error(`Field '${index}' doesn't exist on struct '${name}'`)
             }
         });
+
+        this.name = name;
+    }
+
+    *[Symbol.iterator]() {
+        yield this;
     }
 }

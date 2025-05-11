@@ -1,0 +1,10 @@
+import lexer;
+import parser;
+import exec;
+import fromstr;
+
+use exec::{ Value };
+
+fun parse(str: string): unit {
+    return fromstr::_parse(str);
+}

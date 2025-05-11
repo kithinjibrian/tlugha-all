@@ -55,3 +55,21 @@ export class Module {
         this.children.push(child);
     }
 }
+
+export class EnumModule extends Module {
+    constructor(
+        public name: string,
+        parent_frame: Frame | null = null
+    ) {
+        super(name, parent_frame)
+    }
+}
+
+export class StructModule extends Module {
+    constructor(
+        public name: string,
+        parent_frame: Frame | null = null
+    ) {
+        super(name, parent_frame)
+    }
+}

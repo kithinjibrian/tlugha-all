@@ -1,0 +1,148 @@
+use std::io::{ print };
+
+use super::lexer::{ Token, TokenType };
+
+enum AST {
+    Null,
+    True,
+    False,
+    Number(number),
+    String(string),
+    Array(Array<AST>),
+    Object(Array<AST>),
+    Property(string, AST),
+}
+
+struct Parser {
+    current: number;
+    tokens: Array<Token>;
+}
+
+impl Parser {
+    fun new(tokens: Array<Token>): Parser {
+        return Parser {
+            tokens,
+            current: 0
+        };
+    }
+
+    fun peek(self: Self): Result<Token, string> {
+        self.tokens.at(self.current)
+    }
+
+    fun advance(self: Self): Result<Token, string> {
+        let token = self.tokens.at(self.current);
+        self.current += 1;
+        token
+    }
+
+    fun check(self: Self, token_type: TokenType): bool {
+        if let Result::Ok(token) = (self.peek()) {
+            if(token.token_type == token_type) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    fun match_token(self: Self, ...types: Array<TokenType>): bool {
+        for(let t in types) {
+            if(self.check(t)) {
+                self.advance();
+                return true;
+            }
+        }        
+        
+        return false;
+    }
+
+    fun parse(self: Self): Result<AST, string> {
+        self.value()
+    }
+
+    fun value(self: Self): Result<AST, string> {
+        return if let Result::Ok(token) = (self.peek()) {
+            match(token.token_type) {
+                TokenType::LeftBrace => self.object(),
+                TokenType::LeftBracket => self.array(),
+                TokenType::Null => {
+                    self.advance();
+                    Result::Ok(AST::Null)
+                },
+                TokenType::True => {
+                    self.advance();
+                    Result::Ok(AST::True)
+                },
+                TokenType::False => {
+                    self.advance();
+                    Result::Ok(AST::False)
+                },
+                TokenType::Number(n) => {
+                    self.advance();
+                    Result::Ok(AST::Number(n.parse().unwrap()))
+                },
+                TokenType::String(s) => {
+                    self.advance();
+                    Result::Ok(AST::String(s))
+                },
+                _ => Result::Err("Expected a value")
+            }
+        };
+    }
+
+    fun object(self: Self): Result<AST, string> {
+        let properties: Array<AST> = [];
+        self.advance();
+
+        while(true) {
+            let key = if let Result::Ok(token) = (self.advance()) {
+                match(token.token_type) {
+                    TokenType::String(s) => s,
+                    _ => return Result::Err("Expected a string key")
+                }
+            };
+
+            if(self.match_token(TokenType::Colon) != true) {
+                return Result::Err("Expected ':'");
+            }
+
+            match(self.value()) {
+                Result::Ok(value) => properties.push(AST::Property(key, value)),
+                Result::Err(err) => return Result::Err(err);
+            }
+
+            if(self.match_token(TokenType::Comma) != true) {
+                break;
+            }
+        }
+
+        if(self.match_token(TokenType::RightBrace) != true) {
+            return Result::Err("Expected '}'");
+        }
+
+        Result::Ok(AST::Object(properties))
+    }
+
+    fun array(self: Self): Result<AST, string> {
+        let elements: Array<AST> = [];
+        self.advance();
+
+        while(true) {
+            match(self.value()) {
+                Result::Ok(value) => elements.push(value),
+                Result::Err(err) => return Result::Err(err);
+            }
+
+            if(self.match_token(TokenType::Comma) != true) {
+                break;
+            }
+        }
+
+        if(self.match_token(TokenType::RightBracket) != true) {
+            return Result::Err("Expected ']'");
+        }
+
+        Result::Ok(AST::Array(elements))
+    }
+}

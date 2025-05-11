@@ -72,6 +72,14 @@ function two_char(c1: string, c2: string) {
             switch (c2) {
                 case '=':
                     return TokenType.IsEqual;
+                case '>':
+                    return TokenType.EqArrow;
+            }
+            break;
+        case '.':
+            switch (c2) {
+                case '.':
+                    return TokenType.ERange;
             }
             break;
         case ':':
@@ -191,6 +199,8 @@ function three_char(c1: string, c2: string, c3: string) {
                     switch (c3) {
                         case '.':
                             return TokenType.Ellipsis;
+                        case '=':
+                            return TokenType.IRange;
                     }
                     break;
             }
@@ -208,8 +218,10 @@ export class Lexer {
     private line: number = 1;
     private column: number = 1;
     private lines: string[] = [];
+    private file_path: string;
 
-    constructor(input: string) {
+    constructor(input: string, file_path: string) {
+        this.file_path = file_path;
         this.input = input;
         this.lines = input.split('\n');
     }
@@ -218,6 +230,7 @@ export class Lexer {
         throw new TError({
             code,
             reason,
+            file: this.file_path,
             line: this.line,
             column: this.column,
             lineStr: this.getCurrentLine(),
@@ -229,7 +242,8 @@ export class Lexer {
     }
 
     private peek(offset: number = 0): string {
-        return this.position + offset < this.input.length ? this.input[this.position + offset] : '\0';
+        return this.position + offset < this.input.length ?
+            this.input[this.position + offset] : '\0';
     }
 
     private advance(): string {
@@ -285,7 +299,7 @@ export class Lexer {
             value += this.advance();
         }
 
-        if (this.peek() === '.') {
+        if (this.peek() === '.' && /\d/.test(this.peek(1))) {
             value += this.advance();
             while (/\d/.test(this.peek())) {
                 value += this.advance();
@@ -334,6 +348,10 @@ export class Lexer {
             ["use", TokenType.Use],
             ["as", TokenType.As],
             ["type", TokenType.Type],
+            ["in", TokenType.In],
+            ["match", TokenType.Match],
+            ["map", TokenType.Map],
+            ["set", TokenType.Set],
         ]);
 
         return {
@@ -347,46 +365,144 @@ export class Lexer {
 
     private readString(): Token {
         const startColumn = this.column;
-        const startLine = this.line;
         const currentLineStr = this.getCurrentLine();
         const quote = this.peek();
+
+        // Check for raw string prefix (r" or r' or r"""""" or r'''''' etc.)
+        if (quote === 'r' && (this.peek(1) === '"' || this.peek(1) === "'")) {
+            // Check for raw string enclosed in double quotes or single quotes
+            if (this.peek(1) === '"') {
+                return this.readRawString('"', startColumn, currentLineStr);  // For r"..." or r""""...
+            } else if (this.peek(1) === "'") {
+                return this.readRawString("'", startColumn, currentLineStr);  // For r'...' or r''''...
+            }
+        }
+
+        // Handle regular strings (single-quoted, double-quoted, multi-line, etc.)
+        if (quote === '"' && this.peek(1) === '"' && this.peek(2) === '"') {
+            return this.readMultiLineString(startColumn, currentLineStr);
+        } else if (quote === '"' || quote === "'") {
+            return this.readSingleLineString(startColumn, currentLineStr);
+        }
+
+        this.error(
+            ErrorCodes.lexer.UNEXPECTED_QUOTE,
+            "Unexpected quote type",
+            `Strings in this language must be enclosed using one of the following styles:
+
+1. Raw strings with 'r' prefix (single-line or multi-line):
+   let rawStr = r"raw string here";
+   let rawStr = r'raw string here';
+   let rawStr = r"""multi-line
+   raw string""";
+
+2. Regular strings (single-line or multi-line):
+   let str = "string";
+   let str = 'string';`
+        );
+    }
+
+    private readRawString(quote: string, startColumn: number, currentLineStr: string): Token {
         let value = '';
 
-        // Peek ahead to check for triple double-quotes
-        if (quote === '"' && this.peek(1) === '"' && this.peek(2) === '"') {
-            value = this.readMultiLineString();
-        } else if (quote === '"' || quote === "'") {
-            value = this.readSingleLineString();
-        } else {
-            this.error(
-                ErrorCodes.lexer.UNEXPECTED_QUOTE,
-                "Unexpected quote type",
-                `Strings in lugha must be enclosed using one of the following styles:
+        // Skip 'r'
+        this.advance(); // 'r'
 
-  1. Double or single quotes for single-line strings:
-     let str = "lugha";
-              let str = 'lugha';
-
-  2. Triple double-quotes for multi-line strings:
-     let mstr = """
-         This is a multiline
-         string in lugha
-     """;
-  `
-            );
+        if (quote === '"') {
+            // Handle multi-line raw string with triple quotes
+            if (this.peek() === '"' && this.peek(1) === '"' && this.peek(1) === '"') {
+                value = this.readMultiLineRawString();
+            } else {
+                value = this.readSingleLineRawString();
+            }
+        } else if (quote === "'") {
+            // Handle multi-line raw string with triple single quotes
+            if (this.peek() === "'" && this.peek(1) === "'" && this.peek(2) === "'") {
+                value = this.readMultiLineRawString();
+            } else {
+                value = this.readSingleLineRawString();
+            }
         }
 
         return {
-            type: TokenType.String,
+            type: TokenType.RawString,
             value,
-            line: startLine,
+            line: this.line,
             column: startColumn,
             line_str: currentLineStr
         };
     }
 
+    private readSingleLineRawString(): string {
+        let value = '';
+        const quote = this.peek();
+        this.advance();
+
+        // Collect characters between the opening and closing quotes
+        while (this.peek() !== quote && this.peek() !== '\0') {
+            let ch = this.peek();
+
+            if (ch === '\n' || ch === '\r') {
+                this.error(
+                    ErrorCodes.lexer.UNTERMINATED_STRING,
+                    "Unexpected newline in raw single-line string",
+                    "Use triple double quotes (r\"\"\" \"\"\") for multi-line strings.",
+                    `String value: '${value}'`
+                );
+            }
+
+            value += this.advance();
+        }
+
+        if (this.peek() === '\0') {
+            this.error(
+                ErrorCodes.lexer.UNTERMINATED_STRING,
+                "Unterminated raw string literal.",
+                "Ensure that the raw string is properly closed with a matching quote."
+            );
+        }
+
+        this.advance(); // Skip closing quote
+        return value;
+    }
+
+    private readMultiLineRawString(): string {
+        let value = '';
+
+        this.advance(); this.advance(); this.advance(); // Skip first triple quotes
+
+        // Collect characters until the closing triple quotes
+        while (!(
+            (
+                this.peek() === '"' &&
+                this.peek(1) === '"' &&
+                this.peek(2) === '"'
+            ) ||
+            (
+                this.peek() === "'" &&
+                this.peek(1) === "'" &&
+                this.peek(2) === "'"
+            )
+        ) && this.peek() !== '\0') {
+            value += this.advance();
+        }
+
+        if (this.peek() === '\0') {
+            this.error(
+                ErrorCodes.lexer.UNTERMINATED_STRING,
+                "Unterminated raw string literal.",
+                "Ensure that the raw string is properly closed with matching triple quotes."
+            );
+        }
+
+        // Skip the closing triple quote
+        this.advance(); this.advance(); this.advance();
+
+        return value;
+    }
+
     // Function to handle single-line strings (enclosed in " or ')
-    private readSingleLineString(): string {
+    private readSingleLineString(startColumn: number, currentLineStr: string): Token {
         let value = '';
         const quote = this.peek();
         this.advance(); // Skip opening quote
@@ -427,11 +543,18 @@ export class Lexer {
         }
 
         this.advance(); // Skip closing quote
-        return value;
+
+        return {
+            type: TokenType.String,
+            value,
+            line: this.line,
+            column: startColumn,
+            line_str: currentLineStr
+        };
     }
 
     // Function to handle multi-line strings (enclosed in triple double quotes)
-    private readMultiLineString(): string {
+    private readMultiLineString(startColumn: number, currentLineStr: string): Token {
         let value = '';
         this.advance(); // Skip first "
         this.advance(); // Skip second "
@@ -463,7 +586,14 @@ export class Lexer {
         this.advance(); // Skip first closing "
         this.advance(); // Skip second closing "
         this.advance(); // Skip third closing "
-        return value;
+
+        return {
+            type: TokenType.String,
+            value,
+            line: this.line,
+            column: startColumn,
+            line_str: currentLineStr
+        };
     }
 
     private readOperator(): Token {
@@ -513,6 +643,14 @@ export class Lexer {
         }
 
         const char = this.peek();
+
+        if (char === 'r' && (this.peek(1) === '"' || this.peek(1) === "'")) {
+            try {
+                return this.readString();
+            } catch (error: any) {
+                throw error;
+            }
+        }
 
         if (/\d/.test(char)) return this.readNumber();
         if (/[a-zA-Z_]/.test(char)) return this.readIdentifier();

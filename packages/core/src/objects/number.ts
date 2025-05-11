@@ -1,12 +1,12 @@
 import {
     BlockNode,
+    Engine,
     FunctionDecNode,
     IdentifierNode,
     NumberNode,
-    ReturnNode,
-    Token,
+    ReturnNode
 } from "../types";
-import { Type } from "./base";
+import { Env, Type } from "./base";
 import { BoolType } from "./bool";
 import { FunctionType } from "./function";
 
@@ -50,9 +50,11 @@ export class NumberType extends Type<number> {
             modulo: (obj: Type<number>) => new NumberType(value % obj.getValue()),
             lt: (obj: Type<number>) => new BoolType(value < obj.getValue()),
             gt: (obj: Type<number>) => new BoolType(value > obj.getValue()),
+            lte: (obj: Type<number>) => new BoolType(value <= obj.getValue()),
+            gte: (obj: Type<number>) => new BoolType(value >= obj.getValue()),
             eq: (obj: Type<number>) => new BoolType(value === obj.getValue()),
             neq: (obj: Type<number>) => new BoolType(value !== obj.getValue()),
-            get: (prop: Type<string>, args: Type<any>[]) => {
+            get: (env: Env, prop: Type<string>, args: Type<any>[]) => {
                 const _prop = prop.getValue();
                 const methods = ["sqrt", "abs", "ceil", "floor", "round", "trunc", "pow"];
 
@@ -75,5 +77,9 @@ export class NumberType extends Type<number> {
                 );
             }
         });
+    }
+
+    *[Symbol.iterator]() {
+        yield this;
     }
 }

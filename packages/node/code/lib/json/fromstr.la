@@ -1,0 +1,24 @@
+use std::io::{ print };
+
+use super::lexer::{ Lexer };
+use super::parser::{ Parser };
+use super::exec::{ Exec };
+
+fun _parse(str: string): Result<Value, string> {
+    let lex = Lexer::new(str);
+    
+    match(lex.tokenize()) {
+        Result::Ok(tokens) => {
+            let parser = Parser::new(tokens);
+            
+            match(parser.parse()) {
+                Result::Ok(ast) => {
+                    let exec = Exec::new(ast);
+                    Result::Ok(exec.run())
+                },
+                Result::Err(e) => Result::Err(e)
+            }
+        },
+        Result::Err(e) => Result::Err(e)
+    }
+}
