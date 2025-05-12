@@ -4,8 +4,11 @@
     "main": "dist/main.js",
     "module": "dist/main.mjs",
     "types": "dist/main.d.ts",
+    "bin": {
+        "tlugha": "dist/main.js"
+    },
     "scripts": {
-        "dev": "nodemon --watch src --ext ts --exec ts-node src/main.ts",
+        "dev": "nodemon --watch src --ext ts --exec ts-node src/main.ts code/src/app.la",
         "build": "tsc"
     },
     "devDependencies": {

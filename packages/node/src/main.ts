@@ -9,7 +9,7 @@ async function main() {
         const args = process.argv.slice(2);
 
         if (!args[0]) {
-            console.error("Usage: lugha script.la");
+            console.error("Usage: tlugha script.la");
             process.exit(1);
         }
 
