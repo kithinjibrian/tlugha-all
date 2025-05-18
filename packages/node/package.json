@@ -19,5 +19,6 @@
         "@kithinji/tlugha-core": "^0.0.22",
         "axios": "^1.8.4",
         "nanoid": "^5.1.5"
-    }
+    },
+    "gitHead": "bdb6cf9f01bca1ba4dbdf0bff8975e0586865504"
 }

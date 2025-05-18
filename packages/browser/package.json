@@ -28,5 +28,6 @@
     "dependencies": {
         "@kithinji/tlugha-core": "^0.0.22",
         "axios": "^1.9.0"
-    }
+    },
+    "gitHead": "bdb6cf9f01bca1ba4dbdf0bff8975e0586865504"
 }
