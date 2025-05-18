@@ -1,4 +1,4 @@
-fun print<T>(format: string, ...rest: (T)): unit {
+fun print<T>(format: str, ...rest: (T)): unit {
     if rest.is_empty() {
         root::builtin::__print__(format);
         return;
@@ -7,10 +7,10 @@ fun print<T>(format: string, ...rest: (T)): unit {
     root::builtin::__print__(format.format(...rest));
 }
 
-fun read<T>(filename: string, encoding: string): unit {
+fun read<T>(filename: str, encoding: str): unit {
     return root::builtin::__read__(filename, encoding);
 }
 
-fun write<T>(filename: string, data: string): unit {
+fun write<T>(filename: str, data: str): unit {
     root::builtin::__write__(filename, data);
 }

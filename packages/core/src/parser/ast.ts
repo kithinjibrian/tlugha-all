@@ -10,11 +10,17 @@ export interface ASTVisitor {
     visitMatch?(node: MatchNode, args?: Record<string, any>): any;
     visitMatchArm?(node: MatchArmNode, args?: Record<string, any>): any;
     visitEnumPattern?(node: EnumPatternNode, args?: Record<string, any>): any;
+    visitStructPattern?(node: StructPatternNode, args?: Record<string, any>): any;
+    visitFieldPattern?(node: FieldPatternNode, args?: Record<string, any>): any;
+    visitTuplePattern?(node: TuplePatternNode, args?: Record<string, any>): any;
     visitProgram?(node: ProgramNode, args?: Record<string, any>): any;
     visitSourceElements?(node: SourceElementsNode, args?: Record<string, any>): any;
     visitBlock?(node: BlockNode, args?: Record<string, any>): any;
     visitWhile?(node: WhileNode, args?: Record<string, any>): any;
     visitFor?(node: ForNode, args?: Record<string, any>): any;
+    visitAttribute?(node: AttributeNode, args?: Record<string, any>): any;
+    visitMetaItem?(node: MetaItemNode, args?: Record<string, any>): any;
+    visitMetaSeqItem?(node: MetaSeqItemNode, args?: Record<string, any>): any;
     visitFunctionDec?(node: FunctionDecNode, args?: Record<string, any>): any;
     visitMemberDec?(node: MemberDecNode, args?: Record<string, any>): any;
     visitLambda?(node: LambdaNode, args?: Record<string, any>): any;
@@ -45,6 +51,7 @@ export interface ASTVisitor {
     visitUnaryOp?(node: UnaryOpNode, args?: Record<string, any>): any;
     visitMemberExpression?(node: MemberExpressionNode, args?: Record<string, any>): any;
     visitCallExpression?(node: CallExpressionNode, args?: Record<string, any>): any;
+    visitMacroFunction?(node: MacroFunctionNode, args?: Record<string, any>): any;
     visitArrowExpression?(node: ArrowExpressionNode, args?: Record<string, any>): any;
     visitPostfixExpression?(node: PostfixExpressionNode, args?: Record<string, any>): any;
     visitSpreadElement?(node: SpreadElementNode, args?: Record<string, any>): any;
@@ -75,12 +82,21 @@ export interface ASTVisitor {
 export interface ASTNode {
     type: string;
     token: Token | null;
+    attributes?: AttributeNode[];
+    parent?: ASTNode;
+    hot: Map<string, any>;
     accept(visitor: ASTVisitor, args?: Record<string, any>): any;
 }
 
 export abstract class ASTNodeBase implements ASTNode {
     abstract type: string;
     abstract token: Token | null;
+    public hot: Map<string, any> = new Map();
+
+    constructor(
+        public parent?: ASTNode,
+        public attributes?: AttributeNode[],
+    ) { }
 
     async accept(visitor: ASTVisitor, args?: Record<string, any>) {
         await visitor.before_accept?.(this, args);
@@ -116,6 +132,10 @@ export class SourceElementsNode extends ASTNodeBase {
         public sources: ASTNode[]
     ) {
         super();
+
+        for (let src of sources) {
+            src.parent = this;
+        }
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
@@ -132,6 +152,10 @@ export class BlockNode extends ASTNodeBase {
         public name: string = ""
     ) {
         super();
+
+        for (let node of body) {
+            node.parent = this;
+        }
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
@@ -188,6 +212,54 @@ export class ContinuationNode extends ASTNodeBase {
     }
 }
 
+export class AttributeNode extends ASTNodeBase {
+    type = 'Attribute';
+
+    constructor(
+        public token: Token | null,
+        public meta: MetaItemNode,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitAttribute?.(this, args);
+    }
+}
+
+export class MetaItemNode extends ASTNodeBase {
+    type = 'MetaItem';
+
+    constructor(
+        public token: Token | null,
+        public path: ScopedIdentifierNode,
+        public value?: ASTNode,
+        public meta?: MetaSeqItemNode[],
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitMetaItem?.(this, args);
+    }
+}
+
+export class MetaSeqItemNode extends ASTNodeBase {
+    type = 'MetaSeqItem';
+
+    constructor(
+        public token: Token | null,
+        public meta?: MetaItemNode,
+        public literal?: ASTNode,
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitMetaSeqItem?.(this, args);
+    }
+}
+
 export class FunctionDecNode extends ASTNodeBase {
     type = 'FunctionDec';
     public frame: Frame | null = null;
@@ -202,9 +274,13 @@ export class FunctionDecNode extends ASTNodeBase {
         public is_: boolean = false,
         public exported: boolean = false,
         public type_parameters?: TypeParameterNode[],
-        public return_type?: ASTNode
+        public return_type?: ASTNode,
+        attributes?: AttributeNode[]
     ) {
-        super();
+        super(
+            undefined,
+            attributes
+        );
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
@@ -293,7 +369,7 @@ export class ParameterNode extends ASTNodeBase {
 }
 
 export class ReturnNode extends ASTNodeBase {
-    type = 'return await ';
+    type = 'Return';
 
     constructor(
         public token: Token | null,
@@ -485,19 +561,66 @@ export class MatchArmNode extends ASTNodeBase {
     }
 }
 
+export class FieldPatternNode extends ASTNodeBase {
+    type = 'FieldPattern';
+
+    constructor(
+        public token: Token | null,
+        public iden: IdentifierNode,
+        public patterns?: ASTNode
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitFieldPattern?.(this, args);
+    }
+}
+
+export class StructPatternNode extends ASTNodeBase {
+    type = 'StructPattern';
+
+    constructor(
+        public token: Token | null,
+        public path: ASTNode,
+        public patterns: FieldPatternNode[]
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitStructPattern?.(this, args);
+    }
+}
+
 export class EnumPatternNode extends ASTNodeBase {
     type = 'EnumPattern';
 
     constructor(
         public token: Token | null,
         public path: ASTNode,
-        public patterns: ASTNode[]
+        public patterns?: ASTNode[]
     ) {
         super();
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitEnumPattern?.(this, args);
+    }
+}
+
+export class TuplePatternNode extends ASTNodeBase {
+    type = 'TuplePattern';
+
+    constructor(
+        public token: Token | null,
+        public patterns: ASTNode[]
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitTuplePattern?.(this, args);
     }
 }
 
@@ -558,6 +681,22 @@ export class TupleNode extends ASTNodeBase {
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
         return await visitor.visitTuple?.(this, args);
+    }
+}
+
+export class MacroFunctionNode extends ASTNodeBase {
+    type = 'MacroFunction';
+
+    constructor(
+        public token: Token | null,
+        public name: ScopedIdentifierNode,
+        public args: ASTNode[],
+    ) {
+        super();
+    }
+
+    async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
+        return await visitor.visitMacroFunction?.(this, args);
     }
 }
 
@@ -748,7 +887,8 @@ export class CallExpressionNode extends ASTNodeBase {
     constructor(
         public token: Token | null,
         public callee: ASTNode,
-        public args: ASTNode[]
+        public args: ASTNode[],
+        public type_params?: ASTNode[]
     ) {
         super();
     }
@@ -932,6 +1072,7 @@ export class ImplNode extends ASTNodeBase {
 
 export class StructNode extends ASTNodeBase {
     type = "Struct";
+    public module?: any;
 
     constructor(
         public token: Token | null,
@@ -939,7 +1080,7 @@ export class StructNode extends ASTNodeBase {
         public body: ASTNode[],
         public exported: boolean = false,
         public type_parameters?: TypeParameterNode[],
-        public module?: any
+        public attributes?: AttributeNode[],
     ) {
         super();
     }

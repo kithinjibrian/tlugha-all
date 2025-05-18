@@ -54,6 +54,14 @@ import {
     EnumPatternNode,
     IfLetNode,
     ImplNode,
+    AttributeNode,
+    MacroFunctionNode,
+    MetaItemNode,
+    MetaSeqItemNode,
+    UnaryOpNode,
+    TuplePatternNode,
+    FieldPatternNode,
+    StructPatternNode,
 } from "./ast";
 
 import { Token } from "../lexer/lexer";
@@ -65,7 +73,8 @@ interface Args {
     no_init: boolean,
     constant: boolean,
     ignore_type: boolean,
-    skip_struct_init: boolean
+    skip_struct_init: boolean,
+    attributes: AttributeNode[]
 }
 
 export class Parser {
@@ -194,6 +203,16 @@ export class Parser {
         const iden = this.peek().type;
 
         switch (iden) {
+            case TokenType.Hash: {
+                const attrs = [];
+                while (this.check(TokenType.Hash)) {
+                    attrs.push(this.attribute(args));
+                }
+                return this.statement({
+                    ...args,
+                    attributes: attrs
+                });
+            }
             case TokenType.Fun:
                 return this.function_declaration(args);
             case TokenType.While:
@@ -241,6 +260,156 @@ export class Parser {
         return this.expression_statement(args);
     }
 
+    private expect(type: TokenType, errorConfig: {
+        error: string,
+        message: string,
+        hint: string,
+        expected: string[],
+        example: string
+    }): void {
+        if (!this.match(type)) {
+            this.error(
+                errorConfig.error,
+                errorConfig.message,
+                errorConfig.hint,
+                `Found token: '${this.peek().value}' instead of ${errorConfig.expected[0]}`,
+                errorConfig.expected,
+                errorConfig.example
+            );
+        }
+    }
+
+    private parseDelimitedList<T>({
+        parseItem,
+        delimiter,
+        closingToken,
+        errorConfig
+    }: {
+        parseItem: () => T,
+        delimiter: TokenType,
+        closingToken: TokenType,
+        errorConfig: {
+            error: string,
+            message: string,
+            hint: string,
+            expected: string[],
+            example: string
+        }
+    }): T[] {
+        const items: T[] = [];
+
+        while (!this.match(closingToken)) {
+            items.push(parseItem());
+            if (!this.match(delimiter)) {
+                break;
+            }
+        }
+
+        // Check for closing token
+        if (!this.match(closingToken)) {
+            this.error(
+                errorConfig.error,
+                errorConfig.message,
+                errorConfig.hint,
+                `Found token: '${this.peek().value}' instead of ${errorConfig.expected[0]}`,
+                errorConfig.expected,
+                errorConfig.example
+            );
+        }
+
+        return items;
+    }
+
+    private attribute(args: Args): AttributeNode {
+        const token = this.peek();
+
+        if (!this.match(TokenType.Hash)) {
+            this.error(
+                ErrorCodes.parser.SYNTAX_ERROR,
+                "Expected '#' to start an attribute.",
+                "Attributes must begin with the '#' symbol.",
+                `Found token: '${this.peek().value}' instead of '#'`,
+                ["'#'"],
+                "#[attribute_name]"
+            );
+        }
+
+        if (!this.match(TokenType.LeftBracket)) {
+            this.error(
+                ErrorCodes.parser.SYNTAX_ERROR,
+                "Expected '[' after '#' in attribute.",
+                "Attributes use square brackets like #[...].",
+                `Found token: '${this.peek().value}' instead of '['`,
+                ["'['"],
+                "#[attribute_name]"
+            );
+        }
+
+        const meta_item = this.parseMetaItem(args);
+
+        if (!this.match(TokenType.RightBracket)) {
+            this.error(
+                ErrorCodes.parser.SYNTAX_ERROR,
+                "Expected ']' to close the attribute.",
+                "Attributes must end with a closing bracket.",
+                `Found token: '${this.peek().value}' instead of ']'`,
+                ["']'"],
+                "#[attribute_name]"
+            );
+        }
+
+        return new AttributeNode(token, meta_item);
+    }
+
+    private parseMetaItem(args: Args): MetaItemNode {
+        const startToken = this.peek();
+        const path = this.scoped_identifier(args);
+
+        if (this.match(TokenType.Equals)) {
+            const value = this.constants(args);
+            return new MetaItemNode(startToken, path, value);
+        }
+
+        if (this.match(TokenType.LeftParen)) {
+            const metaSeq = this.parseDelimitedList({
+                parseItem: () => this.parseMetaSeqItem(args),
+                delimiter: TokenType.Comma,
+                closingToken: TokenType.RightParen,
+                errorConfig: {
+                    error: ErrorCodes.parser.SYNTAX_ERROR,
+                    message: "Expected ')' to close meta item arguments.",
+                    hint: "Meta item argument lists must be enclosed in parentheses.",
+                    expected: ["')'"],
+                    example: "key(item1, item2)"
+                }
+            });
+            return new MetaItemNode(startToken, path, undefined, metaSeq);
+        }
+
+        return new MetaItemNode(startToken, path);
+    }
+
+    private parseMetaSeqItem(args: Args): MetaSeqItemNode {
+        const token = this.peek();
+
+        if (this.isLiteralToken(this.peek().type)) {
+            const literal = this.constants(args);
+            return new MetaSeqItemNode(token, undefined, literal);
+        }
+
+        const metaItem = this.parseMetaItem(args);
+        return new MetaSeqItemNode(token, metaItem);
+    }
+
+    private isLiteralToken(tokenType: TokenType): boolean {
+        return [
+            TokenType.String,
+            TokenType.True,
+            TokenType.False,
+            TokenType.Number,
+        ].includes(tokenType);
+    }
+
     // function_declaration ::= "fun" identifier (type_parameters)? "(" (parameter_list)? ")" type_annotation function_body
     private function_declaration(args: Args): FunctionDecNode {
         // Expect function keyword ('fun')
@@ -285,7 +454,7 @@ export class Parser {
                 "Ensure the function declaration is followed by '(' to start the parameter list.",
                 `Found token: '${this.peek().value}' instead of '('`,
                 ["'('"],
-                "'fun my_function(param1: number, param2: string) { ... }'"
+                "'fun my_function(param1: num, param2: string) { ... }'"
             );
         }
 
@@ -300,7 +469,7 @@ export class Parser {
                 "Ensure the function declaration is followed by ')' to close the parameter list.",
                 `Found token: '${this.peek().value}' instead of ')'`,
                 [")"],
-                "'fun my_function(param1: number, param2: string) { ... }'"
+                "'fun my_function(param1: num, param2: string) { ... }'"
             );
         }
 
@@ -316,7 +485,7 @@ export class Parser {
                 "Ensure the function is followed by a return type after a colon ':' if needed.",
                 `Found token: '${this.peek().value}' instead of a return type.`,
                 [":"],
-                "'fun my_function(): number { ... }'"
+                "'fun my_function(): num { ... }'"
             );
         }
 
@@ -333,7 +502,8 @@ export class Parser {
             false,
             false,
             tp,
-            rt
+            rt,
+            args.attributes
         );
     }
 
@@ -347,7 +517,7 @@ export class Parser {
                 "Ensure you're starting the lambda function declaration with the 'fun' keyword.",
                 `Found token: '${this.peek().value}' instead of 'fun'.`,
                 ["'fun'"],
-                "'fun (x: number, y: number) -> x + y'"
+                "'fun (x: num, y: num) -> x + y'"
             );
         }
 
@@ -378,7 +548,7 @@ export class Parser {
                 "Ensure the lambda function is followed by '(' to start the parameter list.",
                 `Found token: '${this.peek().value}' instead of '('`,
                 ["'('"],
-                "'fun (x: number, y: number) -> x + y'"
+                "'fun (x: num, y: num) -> x + y'"
             );
         }
 
@@ -396,7 +566,7 @@ export class Parser {
                 "Ensure the lambda function declaration is followed by ')' to close the parameter list.",
                 `Found token: '${this.peek().value}' instead of ')'`,
                 [")"],
-                "'fun (x: number, y: number) -> x + y'"
+                "'fun (x: num, y: num) -> x + y'"
             );
         }
 
@@ -424,7 +594,7 @@ export class Parser {
                 "Ensure you're using the '->' arrow token to separate parameters from the body in a lambda function.",
                 `Found token: '${this.peek().value}' instead of '->'`,
                 ["'->'"],
-                "'fun (x: number, y: number) -> x + y'"
+                "'fun (x: num, y: num) -> x + y'"
             );
         }
 
@@ -458,7 +628,7 @@ export class Parser {
                     "Variadic parameters are denoted by '...' and must always be the last parameter in the function.",
                     `Found token: '${this.peek().value}' after variadic parameter.`,
                     ["'...'"],
-                    "'fun sum(a: number, b: number, ...rest: (number)) { ... }'"
+                    "'fun sum(a: num, b: num, ...rest: (number)) { ... }'"
                 );
             }
 
@@ -498,7 +668,7 @@ export class Parser {
                 `A type annotation is required after the parameter name, indicating its type.`,
                 `Found token: '${this.peek().value}' instead of a colon ':'`,
                 [":"],
-                "'param: number'"
+                "'param: num'"
             );
         }
 
@@ -735,6 +905,7 @@ export class Parser {
         }
 
         return {
+            hot: new Map(),
             type: "Break",
             token,
             accept(visitor, argz) {
@@ -769,6 +940,7 @@ export class Parser {
 
         return {
             type: "Continue",
+            hot: new Map(),
             token,
             accept(visitor, argz) {
                 return visitor.visitContinue?.(this, argz);
@@ -854,7 +1026,7 @@ export class Parser {
                     "Variables declared with 'const' cannot be marked mutable.",
                     `Tried to declare a constant mutable variable: 'const mut ${this.peek().value}'`,
                     ["Remove 'mut' or use 'let' instead of 'const'"],
-                    "- const x: number = 5; // valid\n  - let mut x: number = 5; // valid\n  - const mut x: number = 5; // ❌ invalid"
+                    "- const x: num = 5; // valid\n  - let mut x: num = 5; // valid\n  - const mut x: num = 5; // ❌ invalid"
                 );
             }
             mutable = true;
@@ -1048,6 +1220,7 @@ export class Parser {
 
         return {
             type: "",
+            hot: new Map(),
             token: this.peek(),
             accept() { }
         };
@@ -1271,6 +1444,7 @@ export class Parser {
             return {
                 type: 'TertiaryExpression',
                 token: this.peek(),
+                hot: new Map(),
                 condition,
                 consequent,
                 alternate,
@@ -1443,13 +1617,25 @@ export class Parser {
 
 
     private unary_expression(args: Args): ASTNode {
+        const token = this.peek();
+
+        if (this.is_unary_operator(this.peek().type)) {
+            const operator = this.advance().value;
+            const expr = this.unary_expression(args);
+            return new UnaryOpNode(token, operator, expr);
+        }
         return this.postfix_expression(args);
+    }
+
+    private is_unary_operator(type: TokenType): boolean {
+        return type === TokenType.ExclamationMark
     }
 
     private postfix_expression(args: Args): ASTNode {
         let expr: ASTNode = this.primary_expression(args);
 
-        if (expr instanceof IfElseNode ||
+        if (
+            expr instanceof IfElseNode ||
             expr instanceof IfLetNode ||
             expr instanceof MatchNode ||
             expr instanceof BlockNode ||
@@ -1460,65 +1646,16 @@ export class Parser {
 
         while (true) {
             if (this.match(TokenType.LeftBracket)) {
-                const index = this.expression(args);
-
-                if (!this.match(TokenType.RightBracket)) {
-                    this.error(
-                        ErrorCodes.parser.MISSING_RIGHT_BRACKET,
-                        "Expected ']' after array index.",
-                        "Arrays are accessed using square brackets, and each opening '[' must be closed with a ']'.",
-                        `Found token: '${this.peek().value}' instead of ']'`,
-                        ["]"],
-                        "'my_array[0]'"
-                    );
-                }
-
-                expr = new MemberExpressionNode(this.peek(), expr, index, true);
+                expr = this.parseArrayAccess(expr, args);
+            }
+            else if (this.match(TokenType.LT)) {
+                expr = this.parseGenericCall(expr, args);
             }
             else if (this.match(TokenType.LeftParen)) {
-                const argz: ASTNode[] = [];
-                const token = this.peek()
-                if (!this.check(TokenType.RightParen)) {
-                    do {
-                        if (this.match(TokenType.Ellipsis)) {
-                            const spreadArg = this.expression(args);
-                            argz.push(new SpreadElementNode(token, spreadArg));
-                        } else
-                            argz.push(this.expression(args));
-                    } while (this.match(TokenType.Comma));
-                }
-
-                if (!this.match(TokenType.RightParen)) {
-                    this.error(
-                        ErrorCodes.parser.MISSING_RIGHT_PAREN,
-                        "Expected ')' after function call arguments.",
-                        "Function calls require parentheses around their arguments, and all opening '(' must be closed.",
-                        `Found token: '${this.peek().value}' instead of ')'`,
-                        [")"],
-                        "'my_func(arg1, arg2)'"
-                    );
-                }
-
-                expr = new CallExpressionNode(this.peek(), expr, argz);
+                expr = this.parseFunctionCall(expr, args);
             }
             else if (this.match(TokenType.Dot)) {
-                if (!this.match(TokenType.Identifier, TokenType.Number)) {
-                    this.error(
-                        ErrorCodes.parser.MISSING_DOT,
-                        "Expected an identifier/number after '.' in member access.",
-                        "When using '.' to access an object's property, it must be followed by a valid identifier.",
-                        `Found token: '${this.peek().value}' instead of an identifier`,
-                        ["identifier"],
-                        "'object.property'"
-                    );
-                }
-
-                expr = new MemberExpressionNode(
-                    this.peek(),
-                    expr,
-                    new IdentifierNode(this.peek(), this.previous().value),
-                    false
-                );
+                expr = this.parseMemberAccess(expr);
             }
             else {
                 break;
@@ -1526,6 +1663,119 @@ export class Parser {
         }
 
         return expr;
+    }
+
+    private parseArgumentList(args: Args): ASTNode[] {
+        const argsList: ASTNode[] = [];
+        const token = this.peek();
+
+        if (!this.check(TokenType.RightParen)) {
+            do {
+                if (this.match(TokenType.Ellipsis)) {
+                    const spreadArg = this.expression(args);
+                    argsList.push(new SpreadElementNode(token, spreadArg));
+                } else {
+                    argsList.push(this.expression(args));
+                }
+            } while (this.match(TokenType.Comma));
+        }
+
+        return argsList;
+    }
+
+    private parseArrayAccess(object: ASTNode, args: Args): ASTNode {
+        const index = this.expression(args);
+
+        if (!this.match(TokenType.RightBracket)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_BRACKET,
+                "Expected ']' after array index.",
+                "Arrays are accessed using square brackets, and each opening '[' must be closed with a ']'.",
+                `Found token: '${this.peek().value}' instead of ']'`,
+                ["]"],
+                "'my_array[0]'"
+            );
+        }
+
+        return new MemberExpressionNode(this.peek(), object, index, true);
+    }
+
+    private parseGenericCall(callee: ASTNode, args: Args): ASTNode {
+        const typeParams: ASTNode[] = [];
+
+        do {
+            typeParams.push(this.type(args))
+        } while (this.match(TokenType.Comma))
+
+        if (!this.match(TokenType.GT)) {
+            this.error(
+                ErrorCodes.parser.MISSING_GREATER_THAN,
+                "Expected '>' after type parameters.",
+                "Ensure that you close your type parameters with a closing '>' token.",
+                `Found token: '${this.peek().value}' instead of '>'`,
+                [">"],
+                "'my_function<num>(20)'"
+            );
+        }
+
+        if (!this.match(TokenType.LeftParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_PAREN,
+                "Expected '(' after generic function.",
+                "Function calls must include parentheses even after specifying generic type arguments.",
+                `Found token: '${this.peek().value}'`,
+                ["("],
+                "'func<str>(\"val\")'"
+            );
+        }
+
+        const argsList = this.parseArgumentList(args);
+
+        if (!this.match(TokenType.RightParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                "Expected ')' after function call arguments.",
+                "Function calls require parentheses around their arguments, and all opening '(' must be closed.",
+                `Found token: '${this.peek().value}' instead of ')'`,
+                [")"],
+                "'my_func(arg1, arg2)'"
+            );
+        }
+
+        return new CallExpressionNode(this.peek(), callee, argsList, typeParams);
+    }
+
+    private parseFunctionCall(callee: ASTNode, args: Args): ASTNode {
+        const argsList = this.parseArgumentList(args);
+
+        if (!this.match(TokenType.RightParen)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                "Expected ')' after function call arguments.",
+                "Function calls require parentheses around their arguments, and all opening '(' must be closed.",
+                `Found token: '${this.peek().value}' instead of ')'`,
+                [")"],
+                "'my_func(arg1, arg2)'"
+            );
+        }
+
+        return new CallExpressionNode(this.peek(), callee, argsList);
+    }
+
+    private parseMemberAccess(object: ASTNode): ASTNode {
+        if (!this.match(TokenType.Identifier, TokenType.Number)) {
+            this.error(
+                ErrorCodes.parser.MISSING_DOT,
+                "Expected an identifier/number after '.' in member access.",
+                "When using '.' to access an object's property, it must be followed by a valid identifier.",
+                `Found token: '${this.peek().value}' instead of an identifier`,
+                ["identifier"],
+                "'object.property'"
+            );
+        }
+
+        const property = new IdentifierNode(this.peek(), this.previous().value);
+        return new MemberExpressionNode(this.peek(), object, property, false);
     }
 
     private primary_expression(args: Args): ASTNode {
@@ -1537,10 +1787,6 @@ export class Parser {
             case TokenType.String:
             case TokenType.RawString:
                 return this.constants(args);
-            case TokenType.Map:
-                return this.map(args);
-            case TokenType.Set:
-                return this.set(args);
             case TokenType.LeftBracket:
                 return this.array(args);
             case TokenType.LeftBrace:
@@ -1553,6 +1799,41 @@ export class Parser {
                 return this.match_expression(args);
             case TokenType.Identifier: {
                 const iden = this.scoped_identifier(args);
+                if (this.match(TokenType.ExclamationMark)) {
+                    if (!this.match(TokenType.LeftParen)) {
+                        ErrorCodes.parser.MISSING_LEFT_PAREN,
+                            "Expected '(' after macro call.",
+                            "Macro calls must include parentheses even after specifying generic type arguments.",
+                            `Found token: '${this.peek().value}'`,
+                            ["("],
+                            "'my_macro!(\"val\")'"
+                    }
+
+                    const argsList = this.parseArgumentList(args);
+
+                    if (!this.match(TokenType.RightParen)) {
+                        this.error(
+                            ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                            "Expected ')' after macro call arguments.",
+                            "Macro calls require parentheses around their arguments, and all opening '(' must be closed.",
+                            `Found token: '${this.peek().value}' instead of ')'`,
+                            [")"],
+                            "'my_macro!(arg1, arg2)'"
+                        );
+                    }
+
+                    return new MacroFunctionNode(token, iden, argsList);
+                }
+
+                if (iden.name.length == 1) {
+                    if (iden.name[0] == "map") {
+                        return this.map(args);
+                    } else if (iden.name[0] == "set") {
+                        return this.set(args);
+                    }
+
+                }
+
                 if (!args.skip_struct_init && this.peek().type == TokenType.LeftBrace) {
                     const fields = this.struct_initializer(args);
                     return new StructInitNode(token, iden, fields);
@@ -1713,18 +1994,6 @@ export class Parser {
         const token = this.peek();
         const properties: PropertyNode[] = [];
 
-        // Ensure the first token is 'map'
-        if (!this.match(TokenType.Map)) {
-            this.error(
-                ErrorCodes.parser.EXPECTED_MAP_KEYWORD,
-                "Expected the 'map' keyword.",
-                "Map declarations must start with the 'map' keyword.",
-                `Found token: '${this.peek().value}' instead of 'map'.`,
-                ["map"],
-                "Example: map { key: value }"
-            );
-        }
-
         // Expect the opening brace
         if (!this.match(TokenType.LeftBrace)) {
             this.error(
@@ -1792,18 +2061,6 @@ export class Parser {
     private set(args: Args): ASTNode {
         const token = this.peek();
         const elements: ASTNode[] = [];
-
-        // Ensure the first token is 'set'
-        if (!this.match(TokenType.Set)) {
-            this.error(
-                ErrorCodes.parser.EXPECTED_SET_KEYWORD,
-                "Expected the 'set' keyword.",
-                "Set declarations must start with the 'set' keyword.",
-                `Found token: '${this.peek().value}' instead of 'set'.`,
-                ["set"],
-                "Example: set { elem1, elem2 }"
-            );
-        }
 
         // Expect the opening brace
         if (!this.match(TokenType.LeftBrace)) {
@@ -2003,6 +2260,17 @@ export class Parser {
             case TokenType.True:
             case TokenType.False:
                 return this.constants(args);
+            case TokenType.LeftParen: {
+                if (this.match(TokenType.LeftParen)) { }
+                const patterns = this.pattern_list(args);
+                if (!this.match(TokenType.RightParen)) {
+                    this.error(
+                        ErrorCodes.parser.MISSING_RIGHT_PAREN,
+                        "Missing '('"
+                    );
+                }
+                return new TuplePatternNode(token, patterns)
+            }
             case TokenType.Identifier: {
                 if (this.peek().value == "_") {
                     this.match(TokenType.Identifier);
@@ -2010,6 +2278,22 @@ export class Parser {
                 }
 
                 const path = this.scoped_identifier(args);
+
+                if (this.match(TokenType.LeftBrace)) {
+                    const field_patterns = this.field_pattern_list(args);
+
+                    if (!this.match(TokenType.RightBrace)) {
+                        this.error(
+                            ErrorCodes.parser.MISSING_RIGHT_BRACE,
+                            "Missing '}'",
+                            "Struct patterns must be enclosed in curly braces '{}'.",
+                            `Found token: '${this.peek().value}' instead of '}'`,
+                            ["'}'"]
+                        );
+                    }
+
+                    return new StructPatternNode(token, path, field_patterns)
+                }
 
                 if (this.match(TokenType.LeftParen)) {
                     const patterns = this.pattern_list(args);
@@ -2023,7 +2307,11 @@ export class Parser {
                     return new EnumPatternNode(token, path, patterns)
                 }
 
-                return path;
+                if (path.name.length == 1) {
+                    return new IdentifierNode(token, path.name[0]);
+                }
+
+                return new EnumPatternNode(token, path);
             }
         }
 
@@ -2041,6 +2329,37 @@ export class Parser {
         } while (this.match(TokenType.Comma));
 
         return patterns;
+    }
+
+    private field_pattern_list(args: Args) {
+        const patterns: FieldPatternNode[] = [];
+
+        do {
+            const pattern = this.field_pattern(args);
+
+            if (pattern)
+                patterns.push(pattern)
+
+        } while (this.match(TokenType.Comma));
+
+        return patterns;
+    }
+
+    private field_pattern(args: Args) {
+        const token = this.peek();
+
+        const path = this.identifier(args);
+
+        let pattern = undefined;
+
+        if (this.match(TokenType.Colon)) {
+            let _pattern = this.pattern(args);
+
+            if (_pattern)
+                pattern = _pattern
+        }
+
+        return new FieldPatternNode(token, path, pattern);
     }
 
     private struct_initializer(args: Args) {
@@ -2127,7 +2446,7 @@ export class Parser {
                 "Struct declarations require a body enclosed in curly braces.",
                 `Found token: '${this.peek().value}' instead of '{'`,
                 ["{"],
-                "'struct Person { name: string; age: number; }'"
+                "'struct Person { name: string; age: num; }'"
             );
         }
 
@@ -2140,7 +2459,7 @@ export class Parser {
                 "Struct declarations must end with a closing curly brace '}'.",
                 `Found token: '${this.peek().value}' instead of '}'`,
                 ["}"],
-                "'struct Person { name: string; age: number; }'"
+                "'struct Person { name: string; age: num; }'"
             );
         }
 
@@ -2181,7 +2500,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                 "Struct declarations must start with the 'struct' keyword.",
                 `Found token: '${this.peek().value}' instead of 'struct'`,
                 ["struct"],
-                "'struct Person { name: string; age: number; }'"
+                "'struct Person { name: string; age: num; }'"
             );
         }
 
@@ -2218,12 +2537,6 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
             }
         }
 
-        // Parse trait implementations if present: "impl" trait_impl ("," trait_impl)*
-        if (this.match(TokenType.Impl)) {
-            // Implementation details would go here
-            // For now, we just keep the existing empty block
-        }
-
         // Parse struct body
         if (!this.match(TokenType.LeftBrace)) {
             this.error(
@@ -2232,7 +2545,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                 "Struct declarations require a body enclosed in curly braces.",
                 `Found token: '${this.peek().value}' instead of '{'`,
                 ["{"],
-                "'struct Person { name: string; age: number; }'"
+                "'struct Person { name: string; age: num; }'"
             );
         }
 
@@ -2245,14 +2558,21 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                 "Struct declarations must end with a closing curly brace '}'.",
                 `Found token: '${this.peek().value}' instead of '}'`,
                 ["}"],
-                "'struct Person { name: string; age: number; }'"
+                "'struct Person { name: string; age: num; }'"
             );
         }
 
         // Optional semicolon after struct declaration
         if (this.match(TokenType.SemiColon)) { }
 
-        return new StructNode(token, name, body, false, tp);
+        return new StructNode(
+            token,
+            name,
+            body,
+            false,
+            tp,
+            args.attributes
+        );
     }
 
     // struct_body ::= (struct_member)*
@@ -2414,7 +2734,7 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
                         "Struct variants in enums must be closed with a closing curly brace '}'.",
                         `Found token: '${this.peek().value}' instead of '}'`,
                         ["}"],
-                        "'Point { x: number, y: number }'"
+                        "'Point { x: num, y: num }'"
                     );
                 }
             }

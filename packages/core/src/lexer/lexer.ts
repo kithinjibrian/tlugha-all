@@ -59,6 +59,8 @@ function one_char(c: string) {
             return TokenType.Dollar;
         case '#':
             return TokenType.Hash;
+        case '!':
+            return TokenType.ExclamationMark;
         case '\n':
             return TokenType.Newline;
         default:
@@ -327,9 +329,6 @@ export class Lexer {
             ["do", TokenType.Do],
             ["if", TokenType.If],
             ["else", TokenType.Else],
-            ["switch", TokenType.Switch],
-            ["case", TokenType.Case],
-            ["default", TokenType.Default],
             ["let", TokenType.Let],
             ["const", TokenType.Const],
             ["fun", TokenType.Fun],
@@ -350,8 +349,6 @@ export class Lexer {
             ["type", TokenType.Type],
             ["in", TokenType.In],
             ["match", TokenType.Match],
-            ["map", TokenType.Map],
-            ["set", TokenType.Set],
         ]);
 
         return {

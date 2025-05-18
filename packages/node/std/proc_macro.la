@@ -1,0 +1,7 @@
+enum Token {
+    EOF,
+    Op(str),
+    String(str),
+    Number(num),
+    Identifier(str),
+}

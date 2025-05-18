@@ -90,6 +90,4 @@ export enum TokenType {
     Type = 'Type',
     In = 'In',
     Match = 'Match',
-    Map = 'Map',
-    Set = 'Set',
 }

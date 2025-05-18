@@ -1,0 +1,48 @@
+use std::lex::{ Lexer };
+use std::syn::{ Parser, AST };
+use std::proc_macro::{ Token };
+
+#[proc_macro_attribute(Deserialize)]
+fun Deserialize(input: Array<Token>): Array<Token> {    
+
+    let code = [];
+
+    let parser = Parser::new(input);
+    let ast = parser.parse();
+
+    match ast.unwrap() {
+        AST::Array(stmts) => {
+            for stmt in stmts {
+                match stmt {
+                    AST::Struct { name, body } => {
+                        code.push("""impl {0} {{ 
+    fun Deserialize(value: Value): Result<Self, str> {{
+        let obj = value.as_object().expect("Expected a json object.");
+        {0} {{
+""".format(name));
+                        for field in body {
+                            match field {
+                                AST::Field { identifier, data_type } => {
+                                    code.push("""
+            {0}: obj.get("{0}").unwrap().unwrap()
+""".format(identifier));
+                                }
+                            }
+                        }
+
+                        code.push("""
+        }
+    }
+}
+""");
+                    }
+                }
+            }
+        }
+    }
+
+    let lex = Lexer::new(code.join(""));
+    let tokens = lex.tokenize();
+
+    tokens.unwrap()
+}

@@ -5,20 +5,20 @@ enum Result<T, E> {
 }
 
 struct Regex {
-    regex: string;
+    regex: str;
 }
 
 impl Regex {
-    fun new(regex: string): Regex {
+    fun new(regex: str): Regex {
         return Regex {
             regex
         };
     }
 
-    fun is_match(self: Self, str: string): bool {
+    fun is_match(self: Self, str: str): bool {
         return match root::builtin::__re_test__(self.regex, str) {
-            Result::Ok(t) => t,
-            Result::Err(f) => f,
+            Ok(t) => t,
+            Err(f) => f,
         };
     }
 }

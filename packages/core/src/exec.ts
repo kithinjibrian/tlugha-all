@@ -5,8 +5,6 @@ import {
     FunctionDecNode,
     IdentifierNode,
     Module,
-    Token,
-    VariableNode
 } from "./types";
 
 export function id(length = 21) {

@@ -1,16 +1,16 @@
 import { Module } from "../types";
 
 export class Cache {
-    private static instance: Cache | null = null;
-    private mods: Map<string, any> = new Map();
+    private static instances: Map<unknown, Cache> = new Map();
+    private mods: Map<string, Module> = new Map();
 
     private constructor() { }
 
-    public static get_instance(): Cache {
-        if (!Cache.instance) {
-            Cache.instance = new Cache();
+    public static get_instance(key: unknown = 'default'): Cache {
+        if (!this.instances.has(key)) {
+            this.instances.set(key, new Cache());
         }
-        return Cache.instance;
+        return this.instances.get(key)!;
     }
 
     public add_mod(path: string, mod: Module): void {
@@ -18,7 +18,13 @@ export class Cache {
     }
 
     public get_mod(path: string): Module {
-        return this.mods.get(path);
+        const mod = this.mods.get(path);
+
+        if (mod == undefined) {
+            throw new Error("Mod doesn't exist")
+        }
+
+        return mod;
     }
 
     public has_mod(path: string): boolean {

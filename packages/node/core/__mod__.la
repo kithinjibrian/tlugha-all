@@ -34,8 +34,16 @@ impl Option {
 
     fun expect(self: Self, message: string): unit {
         match self {
-            Result::Ok(val) => val,
-            Result::Err(err) => root::builtin::__panic__(message)
+            Option::Some(val) => val,
+            Option::None => root::builtin::__panic__(message)
         }
+    }
+}
+
+struct str {}
+
+impl str {
+    fun default(): str {
+        ""
     }
 }

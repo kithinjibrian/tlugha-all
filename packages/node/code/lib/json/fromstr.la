@@ -8,17 +8,17 @@ fun _parse(str: string): Result<Value, string> {
     let lex = Lexer::new(str);
     
     match lex.tokenize() {
-        Result::Ok(tokens) => {
+        Ok(tokens) => {
             let parser = Parser::new(tokens);
             
             match parser.parse() {
-                Result::Ok(ast) => {
+                Ok(ast) => {
                     let exec = Exec::new(ast);
-                    Result::Ok(exec.run())
+                    Ok(exec.run())
                 },
-                Result::Err(e) => Result::Err(e)
+                Err(e) => Err(e)
             }
         },
-        Result::Err(e) => Result::Err(e)
+        Err(e) => Err(e)
     }
 }

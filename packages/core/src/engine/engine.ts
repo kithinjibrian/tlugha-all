@@ -1,6 +1,7 @@
 import { ErrorCodes, TError } from "../error/error";
 import { Panic } from "../error/panic";
 import { EnumType } from "../objects/enum";
+import { ModuleType } from "../objects/module";
 import { RangeType } from "../objects/range";
 import {
     ArrayNode,
@@ -29,11 +30,10 @@ import {
     MemberExpressionNode,
     ModuleNode,
     NumberNode,
-    ParameterNode,
     ProgramNode,
     RangeNode,
-    result,
     ReturnNode,
+    StructModule,
     ScopedIdentifierNode,
     SetNode,
     SourceElementsNode,
@@ -41,7 +41,6 @@ import {
     StringNode,
     StructAlreadyInitNode,
     StructInitNode,
-    StructModule,
     StructNode,
     TaggedNode,
     TupleNode,
@@ -51,7 +50,15 @@ import {
     VariableNode,
     VariableStatementNode,
     WhileNode,
-    WildcardNode
+    WildcardNode,
+    TypeNode,
+    Registry,
+    AttributeNode,
+    MetaItemNode,
+    UnaryOpNode,
+    TuplePatternNode,
+    StructPatternNode,
+    FieldPatternNode
 } from "../types";
 
 import { Frame, Module } from "../types";
@@ -76,16 +83,22 @@ import {
 } from "../types"
 
 export class Engine implements ASTVisitor {
-    private extension: ExtensionStore<unknown> = ExtensionStore.get_instance();
+    private extension: Record<string, ExtensionStore<unknown>> = {
+        "runtime": ExtensionStore.get_instance(),
+        "macro": ExtensionStore.get_instance("macro")
+    };
 
     constructor(
         public file: string,
         public rd: string,
         public wd: string,
-        public ast: ASTNode | null,
         public root: Module,
-        public lugha: Function
-    ) { }
+        public lugha: Function,
+        public ast?: ASTNode,
+        public phase: string = "runtime"
+    ) {
+        // console.log("================>", this.phase);
+    }
 
     public error(
         ast: ASTNode | null,
@@ -113,7 +126,7 @@ export class Engine implements ASTVisitor {
             line: token.line,
             column: token.column,
             lineStr: token.line_str,
-            stage: 'runtime',
+            stage: this.phase,
             hint,
             context,
             expected,
@@ -126,7 +139,7 @@ export class Engine implements ASTVisitor {
         args?: Record<string, any>
     ) {
         // console.log(node.type)
-        for (const ext of this.extension.get_extensions()) {
+        for (const ext of this.extension[this.phase].get_extensions()) {
             await ext.before_accept?.(node, this, args)
         }
     }
@@ -136,7 +149,7 @@ export class Engine implements ASTVisitor {
 
         let handledByExtension = false;
 
-        for (const ext of this.extension.get_extensions()) {
+        for (const ext of this.extension[this.phase].get_extensions()) {
             if (ext.handle_node) {
                 const result = await ext.handle_node(node, this, args);
                 if (result === true) {
@@ -159,7 +172,7 @@ export class Engine implements ASTVisitor {
         node: ASTNode,
         args?: Record<string, any>
     ) {
-        for (const ext of this.extension.get_extensions()) {
+        for (const ext of this.extension[this.phase].get_extensions()) {
             await ext.after_accept?.(node, this, args)
         }
     }
@@ -199,7 +212,8 @@ export class Engine implements ASTVisitor {
     public async execute_function(
         fn: FunctionDecNode | LambdaNode,
         args: Type<any>[],
-        frame: Frame
+        frame: Frame,
+        type_params?: Type<any>[]
     ) {
         const name = fn instanceof FunctionDecNode ? fn.identifier.name : "lambda";
 
@@ -224,6 +238,15 @@ export class Engine implements ASTVisitor {
 
                 new_frame.define(param.identifier.name, value)
             });
+        }
+
+        if (fn.type_parameters && type_params) {
+            fn.type_parameters.forEach((tp, i) => {
+                if (i < type_params.length) {
+                    let value = type_params[i]
+                    new_frame.define(tp.name, value);
+                }
+            })
         }
 
         if (fn instanceof FunctionDecNode && fn.inbuilt) {
@@ -286,14 +309,18 @@ export class Engine implements ASTVisitor {
         }
     }
 
-    async run() {
-        for (const ext of this.extension.get_extensions()) {
-            for (const fn of ext.before_run?.()) {
-                await fn({
-                    root: this.root
-                })
+    async run(ext_ignore?: boolean) {
+        if (ext_ignore == undefined) {
+            for (const ext of this.extension[this.phase].get_extensions()) {
+                for (const fn of ext.before_run?.()) {
+                    await fn({
+                        root: this.root,
+                        file: this.file
+                    })
+                }
             }
         }
+
 
         if (this.ast)
             await this.visit(this.ast, { frame: this.root.frame, module: this.root });
@@ -301,16 +328,18 @@ export class Engine implements ASTVisitor {
         return this;
     }
 
-    async call_main() {
-        let main = this.root.frame.get("main");
+    async call_main(fun: string = "main", args: Type<any>[] = [], raw?: boolean) {
+        let main = this.root.frame.get(fun);
 
         if (main) {
-            await this.execute_function(main, [], this.root.frame);
+            await this.execute_function(main, args, this.root.frame);
             let ret = this.root.frame.stack.pop();
+
+            if (raw) return ret;
 
             let after = [];
 
-            for (const ext of this.extension.get_extensions()) {
+            for (const ext of this.extension[this.phase].get_extensions()) {
                 let val = await ext?.after_main?.({
                     root: this.root
                 });
@@ -404,6 +433,7 @@ export class Engine implements ASTVisitor {
             }
 
             for (let i = start; i < path.length; i++) {
+
                 mod = mod.children.find(m => m.name === path[i]);
                 if (!mod) {
                     self.error(
@@ -468,9 +498,87 @@ export class Engine implements ASTVisitor {
         node: FunctionDecNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        node.frame = frame;
-        node.module = module;
         frame.define(node.identifier.name, node);
+
+        await this.visitFunctionDec_Macro(node, { frame, module });
+
+        if (node.frame == null && node.module == null) {
+            node.frame = frame;
+            node.module = module;
+        }
+    }
+
+    async visitFunctionDec_Macro(
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (!node.attributes || node.attributes.length === 0) {
+            return;
+        }
+
+        for (const attr of node.attributes) {
+            await this.evaluateAttribute(attr, node, { frame, module });
+        }
+    }
+
+    async evaluateAttribute(
+        attr: AttributeNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const metaItem = attr.meta;
+        const name = metaItem.path.name[0];
+
+        switch (name) {
+            case "proc_macro_attribute":
+                await this.proc_macro_attribute(metaItem, node, { frame, module })
+                break;
+            case "proc_macro":
+                await this.proc_macro(metaItem, node, { frame, module })
+                break;
+        }
+    }
+
+    async proc_macro_attribute(
+        metaItem: MetaItemNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (this.phase !== "macro") return;
+
+        if (metaItem.meta) {
+            for (const arg of metaItem.meta) {
+                if (arg.meta && arg.meta.path && arg.meta.path.name.length > 0) {
+                    const name = arg.meta.path.name[0];
+
+                    const path = `${module.get_path()}::${name}`;
+
+                    node.hot.set("pma_path", path);
+
+                    Registry.get_instance().add_macro(path, {
+                        node,
+                        module,
+                        frame
+                    })
+                }
+            }
+        }
+    }
+
+    async proc_macro(
+        metaItem: MetaItemNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (this.phase !== "macro") return;
+
+        const path = `${module.get_path()}::${node.identifier.name}`;
+
+        Registry.get_instance().add_macro(path, {
+            node,
+            module,
+            frame
+        })
     }
 
     async visitLambda(
@@ -529,6 +637,29 @@ export class Engine implements ASTVisitor {
         node: CallExpressionNode,
         { frame, module }: { frame: Frame; module: Module }
     ) {
+        const type_params: Type<any>[] = [];
+
+        if (node.type_params) {
+            for (const tp of node.type_params) {
+                await this.visit(tp, { frame, module })
+                const mod = frame.stack.pop();
+
+                if (!mod) {
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.STACK_UNDERFLOW,
+                        "Stack underflow during argument evaluation.",
+                        "An argument was evaluated, but no result was pushed onto the stack.",
+                        "Stack did not contain expected value after evaluating an argument.",
+                        ["evaluated value"],
+                        "Example: print('{}', 1 + 2)"
+                    );
+                }
+
+                type_params.push(mod);
+            }
+        }
+
         const evaluatedArgs: Type<any>[] = [];
 
         for (const arg of node.args) {
@@ -568,7 +699,7 @@ export class Engine implements ASTVisitor {
                 nd instanceof FunctionType ||
                 nd instanceof LambdaType
             ) {
-                await this.execute_function(nd.getValue(), evaluatedArgs, frame);
+                await this.execute_function(nd.getValue(), evaluatedArgs, frame, type_params);
             } else if (nd instanceof TaggedNode) {
                 const _enum = new EnumType(nd.name, new TupleType(evaluatedArgs), nd.members);
                 frame.stack.push(_enum);
@@ -604,7 +735,7 @@ export class Engine implements ASTVisitor {
                 );
             }
 
-            await this.execute_function(fn.getValue(), evaluatedArgs, frame);
+            await this.execute_function(fn.getValue(), evaluatedArgs, frame, type_params);
         }
     }
 
@@ -853,6 +984,22 @@ export class Engine implements ASTVisitor {
         }
     }
 
+    async visitUnaryOp(
+        node: UnaryOpNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.operand, { frame, module });
+        const operand = frame.stack.pop() as Type<Boolean>;
+
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        frame.stack.push(await operand.not(env));
+    }
+
     async visitBinaryOp(
         node: BinaryOpNode,
         { frame, module }: { frame: Frame, module: Module }
@@ -971,6 +1118,7 @@ export class Engine implements ASTVisitor {
             const symbol = search_frame.get(name);
 
             if (!symbol) {
+                console.log(search_frame.parent);
                 this.error(
                     node,
                     ErrorCodes.runtime.UNDEFINED_SYMBOL,
@@ -1011,15 +1159,22 @@ export class Engine implements ASTVisitor {
             current = module.parent;
         } else {
             current = module.children.find(m => m.name === rootToken);
+
             if (!current) {
-                this.error(
-                    node,
-                    ErrorCodes.runtime.UNDEFINED_MODULE,
-                    `Undefined module: '${rootToken}'`,
-                    `The module '${rootToken}' does not exist.`,
-                    `Available modules: ${module.children.map(m => `'${m.name}'`).join(", ") || "none"}`,
-                    ["existing module name"]
-                );
+                const val_mod = frame.get(rootToken);
+
+                if (val_mod instanceof ModuleType) {
+                    current = val_mod.getValue();
+                } else {
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.UNDEFINED_MODULE,
+                        `Undefined module: '${rootToken}'`,
+                        `The module '${rootToken}' does not exist.`,
+                        `Available modules: ${module.children.map(m => `'${m.name}'`).join(", ") || "none"}`,
+                        ["existing module name"]
+                    );
+                }
             }
         }
 
@@ -1061,7 +1216,6 @@ export class Engine implements ASTVisitor {
         { frame, module }: { frame: Frame, module: Module }
     ) {
         const symbol = this.getScopedSymbol(node, { frame, module });
-
         if (symbol instanceof Type) {
             frame.stack.push(symbol);
         } else if (symbol instanceof StructNode) {
@@ -1075,7 +1229,6 @@ export class Engine implements ASTVisitor {
                 frame.stack.push(symbol.body)
                 return;
             }
-
             frame.stack.push(symbol);
         } else if (symbol instanceof FunctionDecNode) {
             frame.stack.push(new FunctionType(symbol));
@@ -1084,6 +1237,16 @@ export class Engine implements ASTVisitor {
         } else {
             throw new Error(`Unknown object in engine: ${symbol}`)
         }
+    }
+
+    async visitType(
+        node: TypeNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const ch = module.children.find(mod => mod.name == node.name);
+
+        if (ch)
+            frame.stack.push(new ModuleType(ch))
     }
 
     async visitIdentifier(
@@ -1239,7 +1402,7 @@ export class Engine implements ASTVisitor {
         { frame, module }: { frame: Frame, module: Module }
     ) {
         // should revisit. members should capture impl environ
-        const struct_mod = struct_node.module
+        const struct_mod = struct_node.module;
 
         for (const src of impl_node.body) {
             if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
@@ -1251,6 +1414,8 @@ export class Engine implements ASTVisitor {
                 src.module = module;
             }
 
+            let should_push = true;
+
             struct_node.body.map(n => {
                 if (n instanceof FieldNode) {
                     return n.field.name
@@ -1260,15 +1425,12 @@ export class Engine implements ASTVisitor {
             })
                 .map(name => {
                     if (name == src.identifier.name) {
-                        this.error(
-                            src,
-                            "DUPLICATE_FIELDS",
-                            `A field with this name already exist in struct ${struct_node.name}`
-                        )
+                        should_push = false;
                     }
                 })
 
-            struct_node.body.push(src)
+            if (should_push)
+                struct_node.body.push(src)
         }
     }
 
@@ -1313,7 +1475,7 @@ export class Engine implements ASTVisitor {
         node: StructNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        const newModule = new StructModule(node.name, frame);
+        const newModule = node.module ?? new StructModule(node.name, frame);
         node.module = newModule;
 
         frame.define(node.name, node);
@@ -1437,8 +1599,7 @@ export class Engine implements ASTVisitor {
 
         if (
             pattern instanceof NumberNode ||
-            pattern instanceof StringNode ||
-            pattern instanceof ScopedIdentifierNode
+            pattern instanceof StringNode
         ) {
             await this.visit(pattern, { frame, module });
             const res = frame.stack.pop() as Type<any>;
@@ -1446,34 +1607,109 @@ export class Engine implements ASTVisitor {
             return (await res.eq(env, value)).getValue();
         }
 
+        if (
+            pattern instanceof IdentifierNode
+        ) {
+            // SHOULD CHECK IF IT'S IN SCOPE
+            frame.define(pattern.name, value);
+            return true;
+        }
+
+        if (
+            pattern instanceof ScopedIdentifierNode &&
+            pattern.name.length === 1
+        ) {
+            frame.define(pattern.name[0], value);
+            return true;
+        }
+
+        if (pattern instanceof TuplePatternNode) {
+            if (!(value instanceof TupleType)) {
+                return false;
+            }
+
+            if (pattern.patterns.length != value.value.length) {
+                return false;
+            }
+
+            for (let i = 0; i < pattern.patterns.length; i++) {
+                const p = pattern.patterns[i];
+                const v = value.value[i];
+
+                if (!(await this.matchPattern(p, v, { frame, module }))) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         if (pattern instanceof EnumPatternNode) {
+            if (!(value instanceof EnumType)) {
+                return false;
+            }
+
             await this.visit(pattern.path, { frame, module });
             const res = frame.stack.pop();
 
-            if (
-                value instanceof EnumType &&
-                res instanceof TaggedNode
-            ) {
-                if (res.name !== value.tag) {
+            if (res instanceof EnumType && value instanceof EnumType) {
+                return res.tag == value.tag;
+            }
+
+            if (value instanceof EnumType && res instanceof TaggedNode) {
+                if (value.tag != res.name) {
                     return false;
                 }
 
-                for (let [index, val] of pattern.patterns.entries()) {
-                    if (
-                        val instanceof ScopedIdentifierNode &&
-                        val.name.length == 1
-                    ) {
+                if (pattern.patterns) {
+                    for (let i = 0; i < pattern.patterns.length; i++) {
+                        const p = pattern.patterns[i];
                         const v = await value.getValue().get({
                             engine: this,
                             frame,
                             module
-                        }, new NumberType(index), []);
-                        frame.define(val.name[0], v);
+                        }, new NumberType(i), []);
+
+                        if (!(await this.matchPattern(p, v, { frame, module }))) {
+                            return false;
+                        }
                     }
                 }
 
                 return true;
             }
+
+            return false;
+        }
+
+        if (pattern instanceof FieldPatternNode) {
+            const subPattern = pattern.patterns ?? pattern.iden;
+            return await this.matchPattern(subPattern, value, { frame, module });
+        }
+
+        if (pattern instanceof StructPatternNode) {
+            if (!(value instanceof StructType)) {
+                return false;
+            }
+
+            await this.visit(pattern.path, { frame, module });
+            const struct = frame.stack.pop();
+
+            if (!(struct instanceof StructNode)) {
+                return false;
+            }
+
+            if (struct.name !== value.name) {
+                return false;
+            }
+
+            for (const field of pattern.patterns) {
+                if (!(await this.matchPattern(field, value.value[field.iden.name], { frame, module }))) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         if (pattern instanceof WildcardNode) {

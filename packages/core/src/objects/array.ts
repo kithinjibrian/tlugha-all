@@ -82,7 +82,7 @@ let m: Record<string, any> = {
                 const res = frame.stack.pop();
 
                 if (res) {
-                    new_arr.push(create_node(res));
+                    new_arr.unshift(create_node(res));
                 }
             })
         );

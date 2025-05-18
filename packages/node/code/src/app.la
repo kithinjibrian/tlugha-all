@@ -1,8 +1,18 @@
 import json;
 
-use json::{ parse };
+use json::{ from_str, Deserialize };
+
 use std::io::{ print };
 
-fun main(): number {
-    print("{}", builtin::__version__)
+#[derive(Deserialize)]
+struct H {
+    name: str;
+}
+
+fun main(): unit {
+    let js = r"""{ "name": "Alice" }""";
+
+    let h = from_str<H>(js);
+
+    print("{}", h);
 }

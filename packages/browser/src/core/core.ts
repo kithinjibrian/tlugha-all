@@ -25,15 +25,15 @@ enum Result<T, E> {
 impl Result {
     fun unwrap(self: Self): T {
         match(self) {
-            Result::Ok(val) => val,
-            Result::Err(err) => root::builtin::__panic__("called \`Result:: unwrap()\` on an \`Err\` value: {}".format(err))
+            Ok(val) => val,
+            Err(err) => root::builtin::__panic__("called \`Result:: unwrap()\` on an \`Err\` value: {}".format(err))
         } 
     }
 
     fun expect(self: Self, message: string): unit {
         match(self) {
-            Result::Ok(val) => val,
-            Result::Err(err) => root::builtin::__panic__(message)
+            Ok(val) => val,
+            Err(err) => root::builtin::__panic__(message)
         }
     }
 }
@@ -53,8 +53,8 @@ impl Option {
 
     fun expect(self: Self, message: string): T {
         match(self) {
-            Result::Ok(val) => val,
-            Result::Err(err) => root::builtin::__panic__(message)
+            Ok(val) => val,
+            Err(err) => root::builtin::__panic__(message)
         }
     }
 }

@@ -17,6 +17,9 @@ statement ::= variable_statement
     | trait_statement
     | module_statement
     | impl_statement
+    | attribute_statement
+
+attribute_statement ::= "#" "!"? "[" scoped_identifier [ "(" attr_input ")" ] "]"
 
 variable_statement ::= "let" variable_declaration ";"
 variable_declaration ::= ("mut")? variable_pattern (type_annotation)? (initialiser)?
@@ -169,6 +172,7 @@ postfix_expression ::= primary_expression
     | postfix_expression "(" (argument_list)? ")"
     | postfix_expression "." identifier
     | postfix_expression "." identifier "(" (argument_list)? ")"
+    | postfix_expression "<" type_arguments ">" "(" (argument_list)? ")"
 
 primary_expression ::= scoped_identifier
     | constants
@@ -183,6 +187,7 @@ primary_expression ::= scoped_identifier
     | lambda_expression
     | match_expression
     | ( expression )
+    | identifier "!" "(" (argument_list)? ")"
 
 scoped_identifier ::= identifier  ("::" identifier)*
 

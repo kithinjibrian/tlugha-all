@@ -5,7 +5,13 @@ export abstract class Extension<TVisitor> {
     abstract before_accept(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<void>;
     abstract after_accept(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<void>;
     abstract handle_node(node: ASTNode, visitor: TVisitor, args?: Record<string, any>): Promise<boolean | void>;
-    abstract before_run(): (({ root }: { root: Module }) => Promise<void>)[];
+    abstract before_run(): (({
+        root,
+        file
+    }: {
+        root: Module,
+        file: string
+    }) => Promise<void>)[];
     abstract after_main({ root }: { root: Module }): Promise<any>;
 }
 
@@ -15,7 +21,7 @@ export class ExtensionStore<TVisitor> {
 
     private constructor() { }
 
-    public static get_instance<TVisitor>(key: unknown = 'default'): ExtensionStore<TVisitor> {
+    public static get_instance<TVisitor>(key: unknown = 'runtime'): ExtensionStore<TVisitor> {
         if (!this.instances.has(key)) {
             this.instances.set(key, new ExtensionStore<TVisitor>());
         }

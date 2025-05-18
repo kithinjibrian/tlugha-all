@@ -64,6 +64,7 @@ export class EngineBrowser extends Engine {
             cache.add_mod(modPath, module);
 
             await this.lugha({
+                pipeline: [],
                 file: fileToImport,
                 wd: importWd,
                 rd: this.rd,

@@ -9,30 +9,30 @@ module consts {
     const LOG10E = 0.4342944819032518;
 }
 
-fun sqrt(a: number): number {
+fun sqrt(a: num): num {
     return a.sqrt();
 }
 
-fun abs(a: number): number {
+fun abs(a: num): num {
     return a.abs();
 }
 
-fun ceil(a: number): number {
+fun ceil(a: num): num {
     return a.ceil();
 }
 
-fun floor(a: number): number {
+fun floor(a: num): num {
     return a.floor();
 }
 
-fun round(a: number): number {
+fun round(a: num): num {
     return a.round();
 }
 
-fun trunc(a: number): number {
+fun trunc(a: num): num {
     return a.trunc();
 }
 
-fun pow(a: number, b: number): number {
+fun pow(a: num, b: num): num {
     return a.pow(b);
 }

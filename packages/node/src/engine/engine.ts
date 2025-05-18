@@ -9,23 +9,26 @@ import {
 
 import { existsSync } from "fs";
 import * as path from 'path';
+import { pipe_args, pipe_lp, pipe_read } from "../types";
 
 export class EngineNode extends Engine {
     constructor(
         file: string,
         rd: string,
         wd: string,
-        ast: ASTNode | null,
         root: Module,
-        lugha: Function
+        lugha: Function,
+        ast?: ASTNode,
+        phase?: string
     ) {
         super(
             file,
             rd,
             wd,
-            ast,
             root,
-            lugha
+            lugha,
+            ast,
+            phase
         )
     }
 
@@ -88,10 +91,10 @@ export class EngineNode extends Engine {
             }
         }
 
-        const cache = Cache.get_instance();
+        const cache = Cache.get_instance(this.phase);
         let module = cache.has_mod(modPath)
             ? cache.get_mod(modPath)
-            : new Module(name);
+            : new Module(name, null, `${this.phase}-module`);
 
         args?.module.add_submodule(module);
 
@@ -99,10 +102,28 @@ export class EngineNode extends Engine {
             cache.add_mod(modPath, module);
 
             await this.lugha({
+                pipeline: [
+                    pipe_read,
+                    pipe_lp,
+                    async (args: pipe_args, next: Function) => {
+                        const engine = new EngineNode(
+                            args.file_path ?? "",
+                            args.rd,
+                            args.wd,
+                            module,
+                            this.lugha,
+                            args.ast,
+                            this.phase
+                        );
+
+                        await engine.run()
+
+                        args.engine = engine;
+                    }
+                ],
                 file: fileToImport,
                 wd: importWd,
                 rd: this.rd,
-                module
             });
         }
     }

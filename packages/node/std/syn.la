@@ -1,0 +1,226 @@
+use super::io::{ print };
+use super::proc_macro::{ Token };
+
+enum AST {
+    Number(num),
+    String(str),
+    Array(Array<AST>),
+    Type {
+        name: str;
+        args: Array<AST>;
+    },
+    Field {
+        identifier: str;
+        data_type: Type;
+    },
+    Struct {
+        name: str;
+        body: Array<AST>;
+    }
+}
+
+struct Args {
+    statement: bool;
+    no_init: bool;
+    constant: bool;
+    ignore_type: bool;
+    skip_struct_init: bool;
+    attributes: Array<AST>;
+}
+
+impl Args {
+    fun new(): Args {
+        Args {
+            statement: false,
+            no_init: false,
+            constant: false,
+            ignore_type: false,
+            skip_struct_init: false,
+            attributes: []
+        }
+    }
+}
+
+struct Parser {
+    current: num;
+    tokens: Array<Token>;
+}
+
+impl Parser {
+    fun new(tokens: Array<Token>): Parser {
+        return Parser {
+            tokens,
+            current: 0
+        };
+    }
+
+    fun peek(self: Self): Result<Token, str> {
+        self.tokens.at(self.current)
+    }
+
+    fun previous(self: Self): Result<Token, str> {
+        self.tokens.at(self.current - 1)
+    }
+
+    fun advance(self: Self): Result<Token, str> {
+        if !self.is_at_end() {
+            self.current += 1;   
+        }
+
+        self.previous()
+    }
+
+    fun is_at_end(self: Self): bool {
+        if self.current >= self.tokens.length() {
+            return true;
+        }
+
+        false
+    }
+
+    fun check(self: Self, expected: Token): bool {
+        if self.is_at_end() {
+            return true;
+        }
+
+        if let Ok(token) = self.peek() {
+            match ((token, expected)) {
+                (Token::Op(a), Token::Op(b)) => a == b,
+                (Token::Identifier(a), Token::Identifier(b)) => a == b,
+                (Token::EOF, Token::EOF) => true,
+                _ => false
+            }
+        } else {
+            false
+        }
+    }
+
+    fun match_token(self: Self, ...types: Array<Token>): bool {
+        for t in types {
+            if self.check(t) {
+                self.advance();
+                return true;
+            }
+        }        
+        return false;
+    }
+
+    fun parse(self: Self): Result<AST, str> {
+        let args = Args::new();
+
+        let stmts = [];
+
+        while !self.is_at_end() {
+            let stmt = self.parse_stmt(args).unwrap();
+            stmts.push(stmt);
+        }
+
+        Ok(AST::Array(stmts))
+    }
+
+    fun parse_stmt(self: Self, args: Args): Result<AST, str> {
+        match self.peek() {
+            Ok(token) => match token {
+                Token::Identifier(keyword) => match keyword {
+                    "struct" => self.struct_statement(args)
+                },
+                _ => Err("Unknown or unsupported statement.")
+            },
+            Err(err) => Err(err)
+        }
+    }
+
+    fun struct_statement(self: Self, args: Args): Result<AST, str> {
+        self.advance(); 
+
+        match self.peek().unwrap() {
+            Token::Identifier(name) => {
+                self.advance();
+                let body = self.struct_body(args).unwrap();
+                Ok(AST::Struct {
+                    name,
+                    body
+                })
+            },
+            _ => Err("Expected struct name after 'struct'")
+        }
+    }
+
+    fun struct_body(self: Self, args: Args): Result<Array<AST>, str> {
+        let fields = [];
+
+        if !self.match_token(Token::Op("{")) {
+            return Err("Expected '{' to begin struct body.");
+        }
+
+        while !self.check(Token::Op("}")) {
+            let field = self.field(args).unwrap();
+            fields.push(field);
+        }
+
+        if !self.match_token(Token::Op("}")) {
+            return Err("Expected '}' to close struct body.");
+        }
+
+        Ok(fields)
+    }
+
+    fun field(self: Self, args: Args): Result<AST, str> {
+        match self.peek().unwrap() {
+            Token::Identifier(name) => {
+                self.advance();
+                
+                let data_type = self.type_annotation(args).unwrap();
+
+                if !self.match_token(Token::Op(";")) {
+                    return Err("Expected ';' to end field.");
+                }
+
+                Ok(AST::Field {
+                    identifier: name,
+                    data_type
+                })
+            },
+            _ => Err("Expected field name identifier {}".format(self.peek()))
+        }
+    }
+
+    fun type_annotation(self: Self, args: Args): Result<AST, str> {
+        if(!self.match_token(Token::Op(":"))) {
+            return Err("Expected ':' after type identifier");
+        }
+
+        self.data_type(args)
+    } 
+
+    fun data_type(self: Self, args: Args): Result<AST, str> {
+        if let Err(data_type) = self.ft_type(args) {
+            return data_type;
+        } else {
+            return if let Err(data_type) = self.other_type(args) {
+                data_type
+            };
+        }
+
+        Err("Expected type")
+    }
+
+    fun ft_type(self: Self, args: Args): Option<Result<AST, str>> {
+        Option::None
+    } 
+
+    fun other_type(self: Self, args: Args): Option<Result<AST, str>> {
+        if let Ok(token) = self.peek() {
+            match token {
+                Token::Identifier(name) => {
+                    self.advance();
+                    Err(Ok(AST::Type {
+                        name,
+                        args: []
+                    }))
+                },
+                _ => None
+            }
+        }
+    }     
+}

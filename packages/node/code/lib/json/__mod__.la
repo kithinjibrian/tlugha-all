@@ -2,9 +2,23 @@ import lexer;
 import parser;
 import exec;
 import fromstr;
+import macros;
 
 use exec::{ Value };
+use std::io::{ print };
+use macros::{ Deserialize };
 
-fun parse(str: string): unit {
-    return fromstr::_parse(str);
+fun from_str<T: Deserialize>(str: str): Result<T, str> {
+    let value = fromstr::_parse(str);
+
+    match value {
+        Ok(value) => T::Deserialize(value),
+        Err(e) => Err(e)
+    }
+}
+
+fun from_value<T: Deserialize>(value: Value): Result<T, str> {
+    print("{}", value);
+
+    10
 }

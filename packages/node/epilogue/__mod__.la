@@ -1,0 +1,28 @@
+// use std::lex::{ Lexer };
+// use std::syn::{ Parser, AST };
+// use std::proc_macro::{ Token };
+
+// #[proc_macro]
+// fun println(input: Array<Token>): Array<Token> {
+//     let parser = Parser::new(input);
+//     let ast = parser.parse().unwrap();
+
+//     match ast {
+//         AST::Array(arr) => {
+//             let args = arr.map(fun (arg) -> {
+//                 match arg {
+//                     AST::Number(n) => n,
+//                     AST::String(s) => s
+//                 }
+//             });
+
+//             let f = args.shift().expect("Failed to read string format!");
+//             let rest= args;
+
+//             let lexer = Lexer::new("std::io::print({})".format(f.format(...rest)));
+//             let tokens = lexer.tokenize();
+
+//             tokens.unwrap()
+//         }
+//     }
+// }

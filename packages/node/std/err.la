@@ -1,3 +1,3 @@
-fun panic(err: string, ...rest: (string)): unit {
+fun panic(err: str, ...rest: (str)): unit {
     root::builtin::__panic__(err.format(...rest));
 }

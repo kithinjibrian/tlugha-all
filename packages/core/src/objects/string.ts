@@ -639,7 +639,7 @@ export class StringType extends Type<string> {
             add: async (env: Env, obj: Type<string>) => new StringType(value + obj.getValue()),
             eq: async (env: Env, obj: Type<string>) => new BoolType(value === obj.getValue()),
             neq: async (env: Env, obj: Type<string>) => await (await this.eq(env, obj)).not(env),
-            str: async (env: Env) => `"${value}"`,
+            str: async (env: Env) => `${value}`,
             get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
                 const index = obj.getValue();
 

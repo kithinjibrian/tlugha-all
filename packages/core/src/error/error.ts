@@ -8,7 +8,7 @@ export class TError extends Error {
     line: number;
     column: number;
     lineStr: string;
-    stage: "lexer" | "parser" | "runtime" | "stringparser";
+    stage: string;
     hint?: string;
     context?: string;
     expected?: string[];
@@ -22,7 +22,7 @@ export class TError extends Error {
         line: number;
         column: number;
         lineStr: string;
-        stage: "lexer" | "parser" | "runtime" | "stringparser";
+        stage: string;
         file?: string;
         hint?: string;
         context?: string;
