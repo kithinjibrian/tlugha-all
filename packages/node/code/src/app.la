@@ -5,14 +5,18 @@ use json::{ from_str, Deserialize };
 use std::io::{ print };
 
 #[derive(Deserialize)]
-struct H {
+struct Body {
     name: str;
+    email: str;
+    phone: str;
 }
 
 fun main(): unit {
-    let js = r"""{ "name": "Alice" }""";
+    let  k = 90;
 
-    let h = from_str<H>(js);
+    let js = map {
+        k
+    };
 
-    print("{}", h);
+    print("{}", js);
 }

@@ -753,7 +753,7 @@ export class PropertyNode extends ASTNodeBase {
     constructor(
         public token: Token | null,
         public key: string,
-        public value: ASTNode
+        public value?: ASTNode
     ) {
         super();
     }

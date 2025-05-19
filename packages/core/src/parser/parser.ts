@@ -1994,68 +1994,88 @@ export class Parser {
         const token = this.peek();
         const properties: PropertyNode[] = [];
 
-        // Expect the opening brace
-        if (!this.match(TokenType.LeftBrace)) {
-            this.error(
-                ErrorCodes.parser.MISSING_LEFT_BRACE,
-                "Expected '{' after 'map'.",
-                "A map declaration must begin with an opening brace '{' after the 'map' keyword.",
-                `Found token: '${this.peek().value}' instead of '{'.`,
-                ["{"],
-                "Example: map { key: value }"
-            );
+        this.expect(TokenType.LeftBrace, {
+            error: ErrorCodes.parser.MISSING_LEFT_BRACE,
+            message: "Expected '{' after 'map'.",
+            hint: "A map declaration must begin with an opening brace '{' after the 'map' keyword.",
+            expected: ["{"],
+            example: "map { key: value }"
+        });
+
+        while (!this.check(TokenType.RightBrace)) {
+            const keyExpr = this.expression(args);
+            const isStringKey = keyExpr instanceof StringNode;
+
+            let valueExpr: ASTNode | undefined;
+            const hasColon = this.match(TokenType.Colon);
+
+            if (!hasColon && isStringKey) {
+                this.error(
+                    ErrorCodes.parser.MISSING_COLON,
+                    "Expected ':' after string key.",
+                    "String keys must be followed by a colon and a value.",
+                    `Found token: '${this.peek().value}' instead of ':'.`,
+                    [":"],
+                    "Example: map { \"key\": value }"
+                );
+            }
+
+            if (hasColon) {
+                valueExpr = this.expression(args);
+            }
+
+            const key = this.extractValidKey(keyExpr, hasColon);
+
+            properties.push(new PropertyNode(this.peek(), key, valueExpr));
+
+            if (!this.match(TokenType.Comma)) break;
         }
 
-        // Parse key-value pairs
-        if (!this.check(TokenType.RightBrace)) {
-            do {
-                const keyExpr = this.expression(args);
-
-                if (!this.match(TokenType.Colon)) {
-                    this.error(
-                        ErrorCodes.parser.MISSING_COLON,
-                        "Expected ':' between key and value.",
-                        "Map declarations require a colon ':' between keys and values.",
-                        `Found token: '${this.peek().value}' instead of ':'.`,
-                        [":"],
-                        "Example: map { key: value }"
-                    );
-                }
-
-                const valueExpr = this.expression(args);
-
-                if (keyExpr instanceof StringNode) {
-                    properties.push(new PropertyNode(this.peek(), keyExpr.value, valueExpr));
-                } else if (keyExpr instanceof ScopedIdentifierNode) {
-                    if (keyExpr.name.length > 1) {
-                        this.error(
-                            ErrorCodes.parser.MALFORMED_MAP_KEY,
-                            "Malformed map key.",
-                            "Map keys must be a single identifier or string.",
-                            `Found complex identifier: '${keyExpr.name.join('::')}'.`,
-                            [],
-                            "Use simple keys like 'name' or \"name\"."
-                        );
-                    }
-                    properties.push(new PropertyNode(this.peek(), keyExpr.name[0], valueExpr));
-                }
-
-            } while (this.match(TokenType.Comma) && !this.check(TokenType.RightBrace));
-        }
-
-        // Expect the closing brace
-        if (!this.match(TokenType.RightBrace)) {
-            this.error(
-                ErrorCodes.parser.MISSING_RIGHT_BRACE,
-                "Expected '}' at the end of map.",
-                "Map declarations must end with a closing brace '}'.",
-                `Found token: '${this.peek().value}' instead of '}'.`,
-                ["}"],
-                "Example: map { key: value }"
-            );
-        }
+        this.expect(TokenType.RightBrace, {
+            error: ErrorCodes.parser.MISSING_RIGHT_BRACE,
+            message: "Expected '}' at the end of map.",
+            hint: "Map declarations must end with a closing brace '}'.",
+            expected: ["}"],
+            example: "map { key: value }"
+        });
 
         return new MapNode(token, properties);
+    }
+
+    private extractValidKey(expr: ASTNode, hasColon: boolean): string {
+        if (expr instanceof StringNode) {
+            if (!hasColon) {
+                return expr.value;
+            }
+            return expr.value;
+        }
+
+        if (expr instanceof ScopedIdentifierNode) {
+            if (expr.name.length > 1) {
+                this.error(
+                    ErrorCodes.parser.MALFORMED_MAP_KEY,
+                    "Malformed map key.",
+                    "Map keys must be a single identifier.",
+                    `Found complex identifier: '${expr.name.join('::')}'.`,
+                    [],
+                    "Use simple keys like: map { name: value }"
+                );
+            }
+            return expr.name[0];
+        }
+
+        if (expr instanceof IdentifierNode) {
+            return expr.name;
+        }
+
+        this.error(
+            ErrorCodes.parser.INVALID_MAP_KEY,
+            "Invalid map key.",
+            "Map keys must be simple identifiers or strings (only if followed by a value).",
+            `Found invalid key expression.`,
+            [],
+            "Example: map { key: value }"
+        );
     }
 
     private set(args: Args): ASTNode {

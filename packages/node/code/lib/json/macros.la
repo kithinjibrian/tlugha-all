@@ -1,10 +1,10 @@
 use std::lex::{ Lexer };
 use std::syn::{ Parser, AST };
 use std::proc_macro::{ Token };
+use std::io::{ print };
 
 #[proc_macro_attribute(Deserialize)]
 fun Deserialize(input: Array<Token>): Array<Token> {    
-
     let code = [];
 
     let parser = Parser::new(input);
@@ -24,7 +24,7 @@ fun Deserialize(input: Array<Token>): Array<Token> {
                             match field {
                                 AST::Field { identifier, data_type } => {
                                     code.push("""
-            {0}: obj.get("{0}").unwrap().unwrap()
+            {0}: obj.get("{0}").unwrap().unwrap(),
 """.format(identifier));
                                 }
                             }
@@ -40,6 +40,8 @@ fun Deserialize(input: Array<Token>): Array<Token> {
             }
         }
     }
+
+    print("{}", code.join(""));
 
     let lex = Lexer::new(code.join(""));
     let tokens = lex.tokenize();

@@ -1748,8 +1748,15 @@ export class Engine implements ASTVisitor {
         const objectProperties: Record<string, Type<any>> = {};
 
         for (const propNode of node.properties) {
-            await this.visit(propNode.value, { frame, module });
-            const value = frame.stack.pop() as Type<any>;
+            let value: Type<any>;
+
+            if (propNode.value == undefined) {
+                await this.visit(new IdentifierNode(null, propNode.key), { frame, module });
+                value = frame.stack.pop() as Type<any>;
+            } else {
+                await this.visit(propNode.value, { frame, module });
+                value = frame.stack.pop() as Type<any>;
+            }
 
             let key: string = propNode.key;
 
