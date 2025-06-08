@@ -804,7 +804,10 @@ export class Parser {
                 body[i] instanceof IfElseNode ||
                 body[i] instanceof IfLetNode ||
                 body[i] instanceof ExpressionStatementNode ||
-                body[i] instanceof VariableStatementNode
+                body[i] instanceof VariableStatementNode ||
+                body[i] instanceof FunctionDecNode ||
+                body[i] instanceof MatchNode ||
+                body[i] instanceof ForNode
             )) {
                 must_semi.push(body[i]);
             }

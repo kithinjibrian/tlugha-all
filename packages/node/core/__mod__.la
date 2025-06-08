@@ -7,7 +7,7 @@ impl Result {
     fun unwrap(self: Self): T {
         match self {
             Result::Ok(val) => val,
-            Result::Err(err) => root::builtin::__panic__("called `Result::unwrap()` on an `Err` value: {}".format(err))
+            Result::Err(err) => root::builtin::__panic__("called `Result::unwrap()` on an `Err` value: {}".format([err]))
         } 
     }
 

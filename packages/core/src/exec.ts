@@ -8,7 +8,7 @@ import {
 } from "./types";
 
 export const add_builtins = async (builtin: Record<string, Builtin>, { root, }: { root: Module }) => {
-    let module = new Module("builtin");
+    let module = new Module("builtin", null, "builtin", true);
 
     root.add_submodule(module);
 

@@ -1,10 +1,10 @@
-fun print<T>(format: str, ...rest: (T)): unit {
+fun print<T>(format: str, rest: Array<T>): unit {
     if rest.is_empty() {
         root::builtin::__print__(format);
         return;
     }
-    
-    root::builtin::__print__(format.format(...rest));
+
+    root::builtin::__print__(format.format(rest));
 }
 
 fun read(filename: str, encoding: str): str {

@@ -475,6 +475,8 @@ export class ExpressionStatementNode extends ASTNodeBase {
         public expression: ASTNode
     ) {
         super();
+
+        expression.parent = this;
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
@@ -490,6 +492,8 @@ export class ExpressionNode extends ASTNodeBase {
         public expression: ASTNode
     ) {
         super();
+
+        expression.parent = this;
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {

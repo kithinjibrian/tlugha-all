@@ -60,7 +60,7 @@ export class ExtProcMacro extends Extension<ASTVisitor> {
                         }
                     })
                 } else {
-                    module = new Module("core", null, "procmacro_core");
+                    module = new Module("core", null, "procmacro_core", true);
                 }
 
                 root.add_submodule(module);
@@ -124,7 +124,7 @@ export class ExtProcMacro extends Extension<ASTVisitor> {
                 if (cache.has_mod(mod_path)) {
                     module = cache.get_mod(mod_path);
                 } else {
-                    module = new Module("std", null, "procmacro_std");
+                    module = new Module("std", null, "procmacro_std", true);
                 }
 
                 root.add_submodule(module);
@@ -165,7 +165,45 @@ export class ExtProcMacro extends Extension<ASTVisitor> {
                         throw error;
                     }
                 }
-            }
+            },
+            async ({ root, file }: { root: Module, file: string }) => {
+                if (root.is_prologue) return;
+
+                const wd = path.join(this.dir, "../epilogue");
+
+                try {
+                    await lugha({
+                        pipeline: [
+                            pipe_read,
+                            pipe_lp,
+                            async (args: pipe_args, next: Function) => {
+                                try {
+                                    const tc = new EngineNode(
+                                        args.file_path ?? "",
+                                        args.rd,
+                                        args.wd,
+                                        root,
+                                        lugha,
+                                        args.ast,
+                                        "macro"
+                                    );
+
+                                    await tc.run(true)
+                                } catch (e) {
+                                    throw e;
+                                }
+                            }
+                        ],
+                        rd: this.dir,
+                        file: "__mod__.la",
+                        wd,
+                    })
+
+                } catch (error) {
+                    throw error;
+                }
+
+            },
         ]
     }
 }

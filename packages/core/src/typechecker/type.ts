@@ -102,7 +102,9 @@ export class StringTypes extends Base {
         if (!this.instances) {
             const types: Record<string, Types> = {
                 "format": tfun(
-                    tcon_ex("Array", [], null),
+                    tcon_ex("Array", [
+                        tvar(null),
+                    ], null),
                     tcon("str", null),
                     null
                 )

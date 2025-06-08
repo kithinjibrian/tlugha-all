@@ -1,20 +1,19 @@
 import {
+    add_builtins,
     ASTVisitor,
     builtin,
     Extension,
     Module,
-    Cache,
-    Lexer,
-    Parser,
-    Args
+    Cache
 } from "@kithinji/tlugha-core";
-import { lugha, pipe_args, pipe_lp, pipe_read } from "./lugha";
+
+import { lugha, pipe_args, pipe_lp, pipe_procmacro, pipe_read } from "./lugha";
 
 import * as path from 'path';
-import { TypeCheckerNode } from "../typechecker/typechecker";
+import { ExpandMacroNode } from "../macro/expand";
 
-export class ExtTypeChecker extends Extension<ASTVisitor> {
-    public name = "ExtTypeChecker";
+export class ExtExpMacro extends Extension<ASTVisitor> {
+    public name = "ExtExpMacro";
 
     constructor(
         public dir: string
@@ -34,72 +33,19 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
         return [
             async ({ root }: { root?: Module }) => {
                 if (root == undefined) throw new Error("Module root undefined");
-
-                let module;
-
-                let cache = Cache.get_instance("typechecker");
-
-                if (cache.has_mod("builtin")) {
-                    module = cache.get_mod("builtin") as Module;
-                } else {
-                    module = new Module("builtin", null, "builtin", true);
-                }
-
-                root.add_submodule(module);
-
-                if (!cache.has_mod("builtin")) {
-                    cache.add_mod("builtin", module);
-
-                    for (let [key, value] of Object.entries(builtin)) {
-                        const lexer = new Lexer(value.signature, "builtin");
-                        const tokens = lexer.tokenize();
-
-                        const parser = new Parser(tokens, "");
-                        const ast = parser.type({} as Args);
-
-                        const tc = new TypeCheckerNode(
-                            "builtin",
-                            "builtin",
-                            "builtin",
-                            module,
-                            lugha,
-                            ast
-                        );
-
-                        const type = await tc.visit(ast, {
-                            frame: module.frame,
-                            module
-                        });
-
-
-                        if (type?.type == "type") {
-                            let t;
-
-                            if (value.type == "function") {
-                                t = {
-                                    type: "scheme",
-                                    value: tc.hm.generalize(type.value, module.frame)
-                                };
-                            } else {
-                                t = type
-                            }
-
-                            module.frame.define(key, t);
-                        }
-                    }
-                }
+                add_builtins(builtin, { root: root });
             },
-            async ({ root, file }: { root: Module, file: string }) => {
-
+            async ({ root }: { root: Module }) => {
                 let module;
 
-                let cache = Cache.get_instance("typechecker");
+                let cache = Cache.get_instance("expand_macro");
+
                 const wd = path.join(this.dir, "../core");
                 const mod_path = path.join(wd, "__mod__.la")
 
                 if (cache.has_mod(mod_path)) {
-                    module = cache.get_mod(mod_path) as Module;
-                    module.children.map((mod: Module) => root.children.push(mod))
+                    module = cache.get_mod(mod_path);
+                    module.children.map(mod => root.children.push(mod))
 
                     root.children.map((mod: Module) => {
                         if (mod.name == "Result") {
@@ -113,7 +59,7 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                         }
                     })
                 } else {
-                    module = new Module("core", null, `typechecker_core-${file}`, true);
+                    module = new Module("core", null, "expand_core", true);
                 }
 
                 root.add_submodule(module);
@@ -128,7 +74,7 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                                 pipe_lp,
                                 async (args: pipe_args, next: Function) => {
                                     try {
-                                        const tc = new TypeCheckerNode(
+                                        let em = new ExpandMacroNode(
                                             args.file_path ?? "",
                                             args.rd,
                                             args.wd,
@@ -137,7 +83,8 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                                             args.ast,
                                         );
 
-                                        await tc.run(true)
+                                        await em.run(true);
+
                                     } catch (e) {
                                         throw e;
                                     }
@@ -148,7 +95,7 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                             wd,
                         })
 
-                        module.children.map((mod: Module) => root.children.push(mod))
+                        module.children.map(mod => root.children.push(mod))
 
                         root.children.map((mod: Module) => {
                             if (mod.name == "Result") {
@@ -166,17 +113,17 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                     }
                 }
             },
-            async ({ root, file }: { root: Module, file: string }) => {
+            async ({ root }: { root: Module }) => {
                 let module;
 
-                let cache = Cache.get_instance("typechecker");
+                let cache = Cache.get_instance("expand_macro");
                 const wd = path.join(this.dir, "../std");
                 const mod_path = path.join(wd, "__mod__.la")
 
                 if (cache.has_mod(mod_path)) {
-                    module = cache.get_mod(mod_path) as Module;
+                    module = cache.get_mod(mod_path);
                 } else {
-                    module = new Module("std", null, `typechecker_std-${file}`, true);
+                    module = new Module("std", null, "expand_macro_std", true);
                 }
 
                 root.add_submodule(module);
@@ -185,22 +132,23 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                     cache.add_mod(mod_path, module);
 
                     try {
+
                         await lugha({
                             pipeline: [
                                 pipe_read,
                                 pipe_lp,
                                 async (args: pipe_args, next: Function) => {
                                     try {
-                                        const tc = new TypeCheckerNode(
+                                        let pm = new ExpandMacroNode(
                                             args.file_path ?? "",
                                             args.rd,
                                             args.wd,
                                             module,
                                             lugha,
-                                            args.ast,
+                                            args.ast
                                         );
 
-                                        await tc.run(true)
+                                        await pm.run(true)
                                     } catch (e) {
                                         throw e;
                                     }
@@ -210,6 +158,7 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                             file: "__mod__.la",
                             wd,
                         })
+
                     } catch (error) {
                         throw error;
                     }
@@ -227,7 +176,7 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                             pipe_lp,
                             async (args: pipe_args, next: Function) => {
                                 try {
-                                    const tc = new TypeCheckerNode(
+                                    const tc = new ExpandMacroNode(
                                         args.file_path ?? "",
                                         args.rd,
                                         args.wd,
@@ -247,11 +196,9 @@ export class ExtTypeChecker extends Extension<ASTVisitor> {
                         wd,
                     })
 
-
                 } catch (error) {
                     throw error;
                 }
-
             },
         ]
     }

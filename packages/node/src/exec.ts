@@ -54,8 +54,8 @@ export async function exec({
                 pipe_lp,
                 pipe_procmacro,
                 pipe_expandmacro,
-                //pipe_borrowcheck,
-                pipe_typecheck,
+                //  pipe_borrowcheck,
+                // pipe_typecheck,
                 pipe_engine
             ],
             wd: a.dir,

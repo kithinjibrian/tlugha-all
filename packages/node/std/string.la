@@ -1,3 +1,3 @@
 fun format<T>(str: str, ...args: (T)): str {
-    str.format(...args)
+    // str.format(...args)
 }

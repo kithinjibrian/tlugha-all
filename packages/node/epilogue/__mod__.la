@@ -1,28 +1,60 @@
-// use std::lex::{ Lexer };
-// use std::syn::{ Parser, AST };
-// use std::proc_macro::{ Token };
+use std::io::{ print };
+use std::lex::{ Lexer };
+use std::syn::{ Parser, AST };
+use std::proc_macro::{ Token };
 
-// #[proc_macro]
-// fun println(input: Array<Token>): Array<Token> {
-//     let parser = Parser::new(input);
-//     let ast = parser.parse().unwrap();
+#[proc_macro]
+fun println(input: Array<Token>): Array<Token> {
 
-//     match ast {
-//         AST::Array(arr) => {
-//             let args = arr.map(fun (arg) -> {
-//                 match arg {
-//                     AST::Number(n) => n,
-//                     AST::String(s) => s
-//                 }
-//             });
+    let parser = Parser::new(input);
+    let ast = parser.parse().unwrap();
 
-//             let f = args.shift().expect("Failed to read string format!");
-//             let rest= args;
+    let code = ["std::io::print("];
+    let mut args: Array<str> = [];
 
-//             let lexer = Lexer::new("std::io::print({})".format(f.format(...rest)));
-//             let tokens = lexer.tokenize();
+    fun format_ast(ast: AST): str {
+        match ast {
+            AST::Array(arr) => {
+                let parts: Array<str> = [];
+                for item in arr {
+                    parts.push(format_ast(item));
+                }
+                "[{}]".format([parts.join(", ")])
+            },
+            AST::Number(n) => n,
+            AST::String(s) => "'{}'".format([s]),
+            AST::Identifier(s) => s,
+        }
+    }
 
-//             tokens.unwrap()
-//         }
-//     }
-// }
+    fun collect_args(ast: AST): unit {
+        match ast {
+            AST::Array(arr) => {
+                for arg in arr {
+                    args.push(format_ast(arg));
+                }
+            },
+            _ => args.push(format_ast(ast)),
+        }
+    }
+
+    if let AST::Array(arr) = ast {
+        collect_args(arr[0]);
+    }
+
+
+    let format = args[0];
+    let formatted_args = [];
+
+    for n in 1..args.length() {
+        formatted_args.push(args[n]);
+    }
+
+    code.push("{}, {}".format([format, formatted_args]));
+    code.push(")");
+
+    // print("{}", [code.join("")]);
+
+    let lex = Lexer::new(code.join(""));
+    lex.tokenize().unwrap()
+}

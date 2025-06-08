@@ -14,7 +14,8 @@ import {
     Engine as MainEngine,
     VariableNode,
     result,
-    NumberType
+    NumberType,
+    ArrayType
 } from "../types";
 import { Env, Type } from "./base";
 import { FunctionType } from "./function";
@@ -627,9 +628,16 @@ let m: Record<string, any> = {
         const tokens = lexer.tokenize();
         const parser = new Parser(tokens);
         const ast = parser.parse();
-        const engine = new Engine(ast, env, args);
-        const res = await engine.run();
-        return new StringNode(null, res);
+
+        if (args[0] instanceof ArrayType) {
+            const engine = new Engine(ast, env, args[0].value.map((v: any) => v));
+            const res = await engine.run();
+            return new StringNode(null, res);
+        }
+
+        console.log(args);
+
+        throw new Error("Invalid arguments to fun 'format()'");
     }
 }
 

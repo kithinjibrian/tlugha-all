@@ -24,6 +24,7 @@ export function replace_node(
         const index = list.indexOf(target);
         if (index !== -1) {
             list.splice(index, 1, ...newNodes);
+
             return;
         }
     }
@@ -38,5 +39,9 @@ export function replace_node(
             list.splice(index, 1, ...newNodes);
             return;
         }
+    }
+
+    if ('expression' in parent) {
+        (parent as any).expression = newNodes[0];
     }
 }

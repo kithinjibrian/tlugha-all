@@ -15,6 +15,7 @@ export * from './engine/engine'
 export * from "./builtin"
 export * from './exec'
 export * from './macro/registry'
+export * from './macro/expand'
 export * from './error/error'
 export * from './typechecker/typechecker'
 export * from './borrowchecker/borrowchecker'

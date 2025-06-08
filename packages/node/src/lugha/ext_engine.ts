@@ -30,10 +30,12 @@ export class ExtEngine extends Extension<ASTVisitor> {
 
     before_run() {
         return [
+            // Add builtins
             async ({ root }: { root?: Module }) => {
                 if (root == undefined) throw new Error("Module root undefined");
                 add_builtins(builtin, { root: root });
             },
+            // Add core module
             async ({ root, file }: { root: Module, file: string }) => {
 
                 let module;
@@ -58,7 +60,7 @@ export class ExtEngine extends Extension<ASTVisitor> {
                         }
                     })
                 } else {
-                    module = new Module("core", null, `engine_core-${file}`);
+                    module = new Module("core", null, `engine_core-${file}`, true);
                 }
 
                 root.add_submodule(module);
@@ -112,6 +114,7 @@ export class ExtEngine extends Extension<ASTVisitor> {
                     }
                 }
             },
+            // Add std modules
             async ({ root, file }: { root: Module, file: string }) => {
                 let module;
 
@@ -122,7 +125,7 @@ export class ExtEngine extends Extension<ASTVisitor> {
                 if (cache.has_mod(mod_path)) {
                     module = cache.get_mod(mod_path) as Module;
                 } else {
-                    module = new Module("std", null, `engine_std-${file}`);
+                    module = new Module("std", null, `engine_std-${file}`, true);
                 }
 
                 root.add_submodule(module);
@@ -161,6 +164,42 @@ export class ExtEngine extends Extension<ASTVisitor> {
                     } catch (error) {
                         throw error;
                     }
+                }
+            },
+            async ({ root, file }: { root: Module, file: string }) => {
+                if (root.is_prologue) return;
+
+                const wd = path.join(this.dir, "../epilogue");
+
+                try {
+                    await lugha({
+                        pipeline: [
+                            pipe_read,
+                            pipe_lp,
+                            async (args: pipe_args, next: Function) => {
+                                try {
+                                    const tc = new EngineNode(
+                                        args.file_path ?? "",
+                                        args.rd,
+                                        args.wd,
+                                        root,
+                                        lugha,
+                                        args.ast
+                                    );
+
+                                    await tc.run(true)
+                                } catch (e) {
+                                    throw e;
+                                }
+                            }
+                        ],
+                        rd: this.dir,
+                        file: "__mod__.la",
+                        wd,
+                    })
+
+                } catch (error) {
+                    throw error;
                 }
             },
         ]

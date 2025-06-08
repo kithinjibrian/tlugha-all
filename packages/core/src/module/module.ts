@@ -8,14 +8,19 @@ export class Module {
     constructor(
         public name: string,
         parent_frame: Frame | null = null,
-        public tag: string = ""
+        public tag: string = "",
+        public is_prologue: boolean = false
     ) {
         this.frame = new Frame(parent_frame, `${this.name}_frame`);
     }
 
     add_submodule(child: Module): void {
-        if (!child.parent)
+        if (!child.parent) {
             child.parent = this;
+
+            if (!child.is_prologue)
+                child.is_prologue = this.is_prologue;
+        }
 
         this.children.push(child);
     }

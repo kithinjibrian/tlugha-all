@@ -37,7 +37,8 @@ import {
     EnumNode,
     TC_EnumModule,
     EnumVariantNode,
-    TupleVariantNode
+    TupleVariantNode,
+    ArrayNode
 } from "../types";
 import { HM, Ret } from "./hm";
 import { ArrayTypes, NumberTypes, StringTypes, tcon, tcon_ex, tfun, TupleTypes, tvar, Types } from "./type";
@@ -770,6 +771,9 @@ export class TypeChecker implements ASTVisitor {
             current = module.parent;
         } else {
             current = module.children.find(m => m.name === rootToken);
+
+            console.log(module.children)
+
             if (!current) {
                 this.error(
                     node,
@@ -951,6 +955,29 @@ export class TypeChecker implements ASTVisitor {
         return this.visit(node.data_type, args);
     }
 
+    async visitArray(node: ArrayNode, args?: Record<string, any>) {
+        let elems = [];
+        for (const src of node.elements) {
+            let elem = await this.visit(src, args);
+
+            if (elem?.type == "type")
+                elems.push(elem.value);
+        }
+
+        if (elems.length > 0) {
+            const first = elems[0];
+
+            for (let i = 1; i < elems.length; i++) {
+                this.hm.constraint_eq(elems[i], first, node);
+            }
+        }
+
+        return {
+            type: "type",
+            value: tcon_ex("Array", elems, node)
+        }
+    }
+
     async visitString(node: StringNode, args?: Record<string, any>) {
         return {
             type: "type",
@@ -1028,7 +1055,7 @@ export class TypeChecker implements ASTVisitor {
         } else if (node.name == "Array") {
             return {
                 type: "type",
-                value: await this.resolve_type(node, "[]", ArrayTypes.get_instance(), frame)
+                value: await this.resolve_type(node, "Array", ArrayTypes.get_instance(), frame)
             };
         } else {
             let value = frame.get(node.name);

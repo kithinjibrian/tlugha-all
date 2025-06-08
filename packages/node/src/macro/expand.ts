@@ -1,35 +1,17 @@
 import {
-    ArrayType,
     ASTNode,
-    ASTVisitor,
-    BlockNode,
-    ExpressionStatementNode,
-    ExtensionStore,
-    FunctionDecNode,
-    MacroFunctionNode,
-    ProgramNode,
-    SourceElementsNode,
-    StringNode,
-    StringType,
-    TupleType,
-    Type,
-    EnumType,
-    Registry,
+    ImportNode,
     Module,
-    Frame,
-    replace_node,
-    push_between_node,
-    NumberNode,
+    Cache,
+    ErrorCodes,
+    ExpandMacro,
+    Type,
+    RegArgs,
+    FunctionDecNode,
+    ArrayType,
     TokenType,
     Token,
-    Parser,
-    NumberType,
-    StructNode,
-    AttributeNode,
-    MetaItemNode,
-    FieldNode,
-    RegArgs,
-    TypeNode
+    Parser
 } from "@kithinji/tlugha-core";
 
 import {
@@ -37,23 +19,17 @@ import {
     lugha_fn,
     pipe_args,
     pipe_expandmacro,
-    pipe_procmacro
+    pipe_lp,
+    pipe_procmacro,
+    pipe_read
 } from "../types";
 
 import * as path from 'path';
 
-type Ret =
-    | {
-        tag: "single",
-        value: Type<any>
-    }
-    | {
-        tag: "array",
-        value: Type<any>[]
-    }
+import { existsSync } from "fs";
 
-export class ExpandMacro implements ASTVisitor {
-    private extension: ExtensionStore<unknown> = ExtensionStore.get_instance("expand");
+
+export class ExpandMacroNode extends ExpandMacro {
 
     constructor(
         public file: string,
@@ -63,57 +39,14 @@ export class ExpandMacro implements ASTVisitor {
         public lugha: lugha_fn,
         public ast?: ASTNode,
     ) {
-    }
-
-    public async before_accept(
-        node: ASTNode,
-        args?: Record<string, any>
-    ) {
-        // console.log("expand", node.type)
-        for (const ext of this.extension.get_extensions()) {
-            await ext.before_accept?.(node, this, args)
-        }
-    }
-
-    public async visit(node?: ASTNode, args?: Record<string, any>): Promise<Ret | undefined> {
-        if (node == undefined) return;
-
-        let handledByExtension = false;
-
-        for (const ext of this.extension.get_extensions()) {
-            if (ext.handle_node) {
-                const result = await ext.handle_node(node, this, args);
-                if (result === true) {
-                    handledByExtension = true;
-                    break;
-                }
-            }
-        }
-
-        if (!handledByExtension) {
-            try {
-                return await node.accept(this, args);
-            } catch (error) {
-                throw error;
-            }
-        }
-    }
-
-    public async after_accept(
-        node: ASTNode,
-        args?: Record<string, any>
-    ) {
-        for (const ext of this.extension.get_extensions()) {
-            await ext.after_accept?.(node, this, args)
-        }
-    }
-
-    async run() {
-        if (this.ast) {
-            await this.visit(this.ast, { frame: this.root.frame, module: this.root });
-        }
-
-        return this;
+        super(
+            file,
+            rd,
+            wd,
+            root,
+            lugha,
+            ast
+        )
     }
 
     async run_macro(
@@ -188,7 +121,7 @@ export class ExpandMacro implements ASTVisitor {
                     let t: Record<string, string> = {
                         "let": TokenType.Let,
                         "impl": TokenType.Impl,
-                        "fun": TokenType.Fun
+                        "fun": TokenType.Fun,
                     }
 
                     return value in t ? t[value] : TokenType.Identifier
@@ -202,6 +135,8 @@ export class ExpandMacro implements ASTVisitor {
                         ")": TokenType.RightParen,
                         "{": TokenType.LeftBrace,
                         "}": TokenType.RightBrace,
+                        "[": TokenType.LeftBracket,
+                        "]": TokenType.RightBracket,
                         "::": TokenType.Scope,
                         ":": TokenType.Colon,
                         ">=": TokenType.GTE,
@@ -217,6 +152,7 @@ export class ExpandMacro implements ASTVisitor {
             };
 
             const value = t.getValue().getValue().pop();
+
 
             const token: Token = {
                 type: m[t.tag](value),
@@ -244,214 +180,96 @@ export class ExpandMacro implements ASTVisitor {
         return ast;
     }
 
-    async visitProgram(node: ProgramNode, args?: Record<string, any>) {
-        await this.visit(node.program, args);
-    }
+    find_mod_in_lib_hierarchy(startDir: string, moduleName: string): string | null {
+        let currentDir = path.resolve(startDir);
 
-    async visitSourceElements(
-        node: SourceElementsNode,
-        args?: Record<string, any>
-    ) {
-        for (const src of node.sources) {
-            await this.visit(src, args);
-        }
-    }
+        while (true) {
+            const libPath = path.join(currentDir, "lib", moduleName, "__mod__.la");
 
-    async visitFunctionDec(
-        node: FunctionDecNode,
-        args?: Record<string, any>
-    ) {
-        await this.visit(node.body, args)
-    }
-
-    async visitBlock(
-        node: BlockNode,
-        args?: Record<string, any>
-    ) {
-        for (const n of node.body) {
-            await this.visit(n, args);
-        }
-    }
-
-    async visitExpressionStatement(node: ExpressionStatementNode, args?: Record<string, any>) {
-        await this.visit(node.expression, args);
-    }
-
-    async visitStruct(
-        node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
-    ) {
-        await this.visitStruct_Macro(node, { frame, module });
-    }
-
-    async visitStruct_Macro(
-        node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
-    ) {
-        if (!node.attributes || node.attributes.length === 0) {
-            return;
-        }
-
-        for (const attr of node.attributes) {
-            await this.evaluateAttribute(attr, node, { frame, module });
-        }
-    }
-
-    async evaluateAttribute(
-        attr: AttributeNode,
-        node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
-    ) {
-        const metaItem = attr.meta;
-        const name = metaItem.path.name[0];
-
-        switch (name) {
-            case "derive":
-                await this.derive(metaItem, node, { frame, module })
-                break;
-        }
-    }
-
-    async derive(
-        metaItem: MetaItemNode,
-        node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
-    ) {
-        if (metaItem.meta) {
-            for (const arg of metaItem.meta) {
-                if (arg.meta && arg.meta.path && arg.meta.path.name.length > 0) {
-                    const name = arg.meta.path.name[0];
-
-                    const fun = frame.get(name);
-
-                    if (!(fun instanceof FunctionDecNode)) {
-                        throw new Error(`Macro '${name}' couldn't be found`)
-                    }
-
-                    const path = fun.hot.get("pma_path");
-
-                    if (path == undefined) {
-                        throw new Error(`Macro '${name}' couldn't be found`)
-                    }
-
-                    const reg = Registry.get_instance();
-
-                    const macro = reg.get_macro(path);
-
-                    if (macro == undefined) {
-                        throw new Error(`Macro '${path}' couldn't be found`)
-                    }
-
-                    const tokens: Type<any>[] = [
-                        new EnumType("Identifier", new TupleType([new StringType("struct")])),
-                        new EnumType("Identifier", new TupleType([new StringType(node.name)])),
-                    ];
-
-                    tokens.push(new EnumType("Op", new TupleType([new StringType("{")])))
-
-                    for (let src of node.body) {
-                        if (src instanceof FieldNode) {
-                            const _t = await this.visit(src, { frame, module })
-
-                            if (_t?.tag == "array")
-                                tokens.push(..._t.value);
-                        }
-                    }
-
-                    tokens.push(new EnumType("Op", new TupleType([new StringType("}")])))
-
-                    let ast = await this.run_macro(tokens, node, macro)
-
-                    push_between_node(node, ast);
-                }
+            if (existsSync(libPath)) {
+                return libPath;
             }
+
+            const parentDir = path.dirname(currentDir);
+            if (parentDir === currentDir) break; // Reached root
+            currentDir = parentDir;
         }
+
+        return null;
     }
 
-    async visitField(
-        node: FieldNode,
+    async visitImport(
+        node: ImportNode,
         args?: Record<string, any>
     ) {
-        const tokens = [];
-        if (node.mutable) {
-            tokens.push(new EnumType("Identifier", new TupleType([new StringType("mut")])))
-        }
+        const originalWd = this.wd;
+        const name = node.identifier.name;
 
-        tokens.push(new EnumType("Identifier", new TupleType([new StringType(node.field.name)])))
-        tokens.push(new EnumType("Op", new TupleType([new StringType(":")])))
+        let fileToImport = `${name}.la`;
+        let importWd = originalWd;
 
-        const _t = await this.visit(node.data_type, args)
+        const localPath = path.join(originalWd, fileToImport);
+        const localModPath = path.join(originalWd, name, "__mod__.la");
 
-        if (_t?.tag == "array")
-            tokens.push(..._t.value)
+        let modPath: string | null = null;
 
-        tokens.push(new EnumType("Op", new TupleType([new StringType(";")])))
+        if (existsSync(localPath)) {
+            modPath = localPath;
+        } else if (existsSync(localModPath)) {
+            fileToImport = "__mod__.la";
+            importWd = path.join(originalWd, name);
+            modPath = path.join(importWd, fileToImport);
+        } else {
+            const foundLibPath = this.find_mod_in_lib_hierarchy(this.rd, name);
 
-        return {
-            tag: "array",
-            value: tokens
-        };
-    }
-
-    async visitType(node: TypeNode, args?: Record<string, any>) {
-        const tokens = [
-            new EnumType("Identifier", new TupleType([new StringType(node.name)]))
-        ];
-
-        return {
-            tag: "array",
-            value: tokens
-        };
-    }
-
-    async visitMacroFunction(
-        node: MacroFunctionNode,
-        { frame, module }: { frame: Frame, module: Module }
-    ) {
-        const name = node.name.name[0];
-        const reg = Registry.get_instance();
-        const module_path = `${module.get_path()}::${name}`;
-
-        const macro = reg.get_macro(module_path);
-
-        if (macro == undefined) {
-            throw new Error(`Macro '${module_path}' couldn't be found`)
-        }
-
-        const tokens: Type<any>[] = [];
-
-        tokens.push(new EnumType("Op", new TupleType([new StringType("(")])))
-
-        for (let [index, src] of node.args.entries()) {
-            const token = await this.visit(src, { frame, module });
-
-            if (token?.tag == "single") {
-                tokens.push(token.value)
-
-                if (index < node.args.length - 1) {
-                    tokens.push(new EnumType("Op", new TupleType([new StringType(",")])))
-                }
+            if (foundLibPath) {
+                fileToImport = "__mod__.la";
+                importWd = path.dirname(foundLibPath);
+                modPath = foundLibPath;
+            } else {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Could not find module '${name}'.`,
+                    "Import statements must reference a valid module file or directory.",
+                    `No file '${fileToImport}' or '${name}/__mod__.la' found in '${originalWd}', and module was not found in library paths.`,
+                    [`${name}.la`, `${name}/__mod__.la`],
+                    `Example: import ${name}`
+                );
             }
         }
 
-        tokens.push(new EnumType("Op", new TupleType([new StringType(")")])))
+        const cache = Cache.get_instance("expand_macro");
+        let module = cache.has_mod(modPath)
+            ? cache.get_mod(modPath)
+            : new Module(name, null, `expand_macro`);
 
-        let ast = await this.run_macro(tokens, node, macro);
+        args?.module.add_submodule(module);
 
-        replace_node(node, ast);
-    }
+        if (!cache.has_mod(modPath)) {
+            cache.add_mod(modPath, module);
 
-    async visitString(node: StringNode, args?: Record<string, any>) {
-        return {
-            tag: "single",
-            value: new EnumType("String", new TupleType([new StringType(node.value)]))
-        };
-    }
+            await this.lugha({
+                pipeline: [
+                    pipe_read,
+                    pipe_lp,
+                    async (args: pipe_args, next: Function) => {
+                        const tc = new ExpandMacro(
+                            args.file_path ?? "",
+                            args.rd,
+                            args.wd,
+                            module,
+                            this.lugha,
+                            args.ast
+                        );
 
-    async visitNumber(node: NumberNode, args?: Record<string, any>) {
-        return {
-            tag: "single",
-            value: new EnumType("Number", new TupleType([new NumberType(node.value)]))
-        };
+                        await tc.run()
+                    }
+                ],
+                file: fileToImport,
+                wd: importWd,
+                rd: this.rd,
+            });
+        }
     }
 }

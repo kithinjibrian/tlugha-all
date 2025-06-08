@@ -321,7 +321,6 @@ export class Engine implements ASTVisitor {
             }
         }
 
-
         if (this.ast)
             await this.visit(this.ast, { frame: this.root.frame, module: this.root });
 
@@ -433,7 +432,6 @@ export class Engine implements ASTVisitor {
             }
 
             for (let i = start; i < path.length; i++) {
-
                 mod = mod.children.find(m => m.name === path[i]);
                 if (!mod) {
                     self.error(

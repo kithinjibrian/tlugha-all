@@ -1,4 +1,4 @@
-use std::io::{ print };
+import b;
 
 struct Body {
     name: str,
@@ -7,7 +7,6 @@ struct Body {
 }
 
 fun main(): unit {
-    let js = 90;
-
-    // print("{}", "string");
+    let a = 90;
+    println!("{} {}", a, 'lol');
 }

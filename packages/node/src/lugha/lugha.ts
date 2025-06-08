@@ -18,8 +18,9 @@ import * as path from 'path';
 import { readFile } from "fs/promises";
 import { ExtEngine } from "./ext_engine";
 import { ExtProcMacro } from "./ext_procmacro";
-import { ExpandMacro } from "../macro/expand";
 import { ExtTypeChecker } from "./ext_typechecker";
+import { ExtExpMacro } from "./ext_expmacro";
+import { ExpandMacroNode } from "../macro/expand";
 
 export type pipe_args = {
     wd: string;
@@ -92,7 +93,7 @@ export const pipe_lp = async (args: pipe_args, next: Function) => {
 
 export const pipe_procmacro = async (args: pipe_args, next: Function) => {
     ExtensionStore.get_instance("macro").register(new ExtProcMacro(path.join(__dirname, "..")))
-    args.pm_module = new Module("root", null, "procmacro_module");
+    args.pm_module = new Module("root", null, "procmacro_module", false);
 
     try {
         let pm = new EngineNode(
@@ -115,9 +116,10 @@ export const pipe_procmacro = async (args: pipe_args, next: Function) => {
 
 export const pipe_expandmacro = async (args: pipe_args, next: Function) => {
     if (!args.pm_module) return await next();
+    ExtensionStore.get_instance("expand_macro").register(new ExtExpMacro(path.join(__dirname, "..")))
 
     try {
-        let em = new ExpandMacro(
+        let em = new ExpandMacroNode(
             args.file_path ?? "",
             args.rd,
             args.wd,
@@ -225,58 +227,3 @@ export const lugha: lugha_fn = async ({
         return ctx.engine
     }
 }
-
-
-//try {
-// if (pm_module) {
-//     let pm = new ProcMacroExt(
-//         file_path,
-//         rd,
-//         wd,
-//         ast,
-//         pm_module,
-//         lugha
-//     );
-
-//     await pm.run()
-// }
-
-// if (em_module) {
-//     let em = new ExpandMacro(
-//         file_path,
-//         rd,
-//         wd,
-//         ast,
-//         em_module,
-//         lugha
-//     );
-
-//     await em.run()
-// }
-
-// if (tc_module) {
-//     // let tc = new TypeChecker(
-//     //     file_path,
-//     //     ast,
-//     //     tc_module,
-//     //     lugha
-//     // );
-
-//     // await tc.run()
-// }
-
-// if (rt_module) {
-//     const engine = new EngineNode(
-//         file_path,
-//         rd,
-//         wd,
-//         ast,
-//         rt_module,
-//         lugha
-//     );
-
-//     return await engine.run();
-// }
-//} catch (error: any) {
-//    throw error;
-//}
