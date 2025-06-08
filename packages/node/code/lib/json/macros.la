@@ -10,6 +10,7 @@ fun Deserialize(input: Array<Token>): Array<Token> {
     let parser = Parser::new(input);
     let ast = parser.parse();
 
+    // return Result
     match ast.unwrap() {
         AST::Array(stmts) => {
             for stmt in stmts {

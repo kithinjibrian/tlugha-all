@@ -73,7 +73,7 @@ fun eval(ast: AST): Value {
 }
 
 struct Exec {
-    ast: AST;
+    ast: AST
 }
 
 impl Exec {

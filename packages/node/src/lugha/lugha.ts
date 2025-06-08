@@ -5,7 +5,9 @@ import {
     Module,
     ASTNode,
     ExtensionStore,
-    ASTCache
+    ASTCache,
+    TypeChecker,
+    BorrowChecker
 } from "@kithinji/tlugha-core";
 
 import {
@@ -17,6 +19,7 @@ import { readFile } from "fs/promises";
 import { ExtEngine } from "./ext_engine";
 import { ExtProcMacro } from "./ext_procmacro";
 import { ExpandMacro } from "../macro/expand";
+import { ExtTypeChecker } from "./ext_typechecker";
 
 export type pipe_args = {
     wd: string;
@@ -131,7 +134,47 @@ export const pipe_expandmacro = async (args: pipe_args, next: Function) => {
     }
 }
 
-export const pipe_typecheck = async (args: pipe_args, next: Function) => { }
+export const pipe_typecheck = async (args: pipe_args, next: Function) => {
+    ExtensionStore.get_instance("typechecker").register(new ExtTypeChecker(path.join(__dirname, "..")));
+
+    try {
+        const tc = new TypeChecker(
+            args.file_path ?? "",
+            args.rd,
+            args.wd,
+            new Module("root", null, "typecheck_module"),
+            lugha,
+            args.ast
+        );
+
+        await tc.run()
+
+        return await next();
+    } catch (e) {
+        throw e;
+    }
+}
+
+export const pipe_borrowcheck = async (args: pipe_args, next: Function) => {
+    ExtensionStore.get_instance("borrowchecker");
+
+    try {
+        const bc = new BorrowChecker(
+            args.file_path ?? "",
+            args.rd,
+            args.wd,
+            new Module("root", null, "borrowcheck_module"),
+            lugha,
+            args.ast
+        );
+
+        await bc.run()
+
+        return await next();
+    } catch (e) {
+        throw e;
+    }
+}
 
 export const pipe_engine = async (args: pipe_args, next: Function) => {
     ExtensionStore.get_instance().register(new ExtEngine(path.join(__dirname, "..")))

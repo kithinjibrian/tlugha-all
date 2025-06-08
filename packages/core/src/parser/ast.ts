@@ -1,4 +1,4 @@
-import { Frame, Module, StructType, Token } from "../types";
+import { Frame, id, Module, StructType, Token } from "../types";
 
 export interface ASTVisitor {
     before_accept?(node: ASTNode, args?: Record<string, any>): any;
@@ -356,6 +356,7 @@ export class ParameterNode extends ASTNodeBase {
         public token: Token | null,
         public identifier: IdentifierNode,
         public variadic: boolean,
+        public mutable: boolean,
         public data_type: ASTNode | null,
         public expression?: ASTNode,
         public value?: any
@@ -414,8 +415,38 @@ export class AliasNode extends ASTNodeBase {
     }
 }
 
+export class Lifetime {
+    id: string;
+
+    constructor(
+        public startNode?: ASTNode,
+        public endNode?: ASTNode,
+    ) {
+        this.id = id();
+    }
+}
+
+export class ActiveBorrow {
+    type: 'shared' | 'mutable';
+    borrowerNode: ScopedIdentifierNode;
+    lifetime: Lifetime;
+
+    constructor(
+        type: 'shared' | 'mutable',
+        borrowerNode: ScopedIdentifierNode,
+        lifetime: Lifetime
+    ) {
+        this.type = type;
+        this.borrowerNode = borrowerNode;
+        this.lifetime = lifetime;
+    }
+}
+
 export class VariableNode extends ASTNodeBase {
     type = 'Variable';
+    public moved: boolean = false;
+    public active_borrows: ActiveBorrow[] = [];
+    public owner_lifetime: Lifetime;
 
     constructor(
         public token: Token | null,
@@ -427,6 +458,8 @@ export class VariableNode extends ASTNodeBase {
         public data_type?: any,
     ) {
         super();
+
+        this.owner_lifetime = new Lifetime();
     }
 
     async _accept(visitor: ASTVisitor, args?: Record<string, any>): Promise<any> {
@@ -977,6 +1010,7 @@ export class IdentifierNode extends ASTNodeBase {
 
 export class ScopedIdentifierNode extends ASTNodeBase {
     type = 'ScopedIdentifier';
+    public borrowed_ref_into?: ActiveBorrow;
 
     constructor(
         public token: Token | null,
@@ -1008,11 +1042,12 @@ export class TypeParameterNode extends ASTNodeBase {
 
 export class TypeNode extends ASTNodeBase {
     type = "Type";
+    public genericParams?: TypeNode[];
 
     constructor(
         public token: Token | null,
         public name: string,
-        public types?: any[]
+        public types?: TypeNode[]
     ) {
         super();
     }

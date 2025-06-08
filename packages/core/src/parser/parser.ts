@@ -68,7 +68,7 @@ import { Token } from "../lexer/lexer";
 import { TokenType } from "../lexer/token";
 import { ErrorCodes, TError } from "../error/error";
 
-interface Args {
+export interface Args {
     statement: boolean,
     no_init: boolean,
     constant: boolean,
@@ -90,8 +90,8 @@ export class Parser {
         this.tokens = tokens.filter(token => token.type !== TokenType.Newline);
     }
 
-    private peek(): Token {
-        return this.tokens[this.current];
+    private peek(start: number = 0): Token {
+        return this.tokens[this.current + start];
     }
 
     private previous(): Token {
@@ -648,11 +648,17 @@ export class Parser {
     }
 
     private parameter(args: Args): ParameterNode {
-        let variadic = false;
+        const token = this.peek();
+
+        let variadic = false, mutable = false;
 
         // Check for ellipsis token (variadic parameter)
         if (this.match(TokenType.Ellipsis)) {
             variadic = true;
+        }
+
+        if (this.match(TokenType.Mut)) {
+            mutable = true;
         }
 
         // Parse the identifier (parameter name)
@@ -677,9 +683,10 @@ export class Parser {
         }
 
         return new ParameterNode(
-            this.peek(),
+            token,
             identifier,
             variadic,
+            mutable,
             data_type
         );
     }
@@ -1015,7 +1022,8 @@ export class Parser {
 
     // variable_declaration ::= ("mut")? identifier (type_annotation)? (initialiser)?
     private variable(args: Args): VariableNode {
-        let mutable = false;
+        const token = this.peek();
+        let mutable = undefined;
         let expression = undefined;
 
         if (this.match(TokenType.Mut)) {
@@ -1029,6 +1037,7 @@ export class Parser {
                     "- const x: num = 5; // valid\n  - let mut x: num = 5; // valid\n  - const mut x: num = 5; // ❌ invalid"
                 );
             }
+
             mutable = true;
         }
 
@@ -1048,13 +1057,17 @@ export class Parser {
                 ...args,
                 statement: false
             });
+
+            if (mutable == undefined) {
+                mutable = false;
+            }
         }
 
         return new VariableNode(
-            this.peek(),
+            token,
             identifier,
             args.constant,
-            mutable,
+            mutable == undefined ? true : mutable,
             expression,
             undefined,
             data_type
@@ -1209,8 +1222,8 @@ export class Parser {
         | Type < type ("," type)* >
         | "(" type ("," type)* ")"
      */
-    public type(args: Args): ASTNode {
-        let type: ASTNode | null = null;
+    public type(args: Args): TypeNode {
+        let type: TypeNode | null = null;
 
         if ((type = this.ft_type(args))) {
             return type;
@@ -1218,27 +1231,87 @@ export class Parser {
             return type;
         }
 
-        return {
-            type: "",
-            hot: new Map(),
-            token: this.peek(),
-            accept() { }
-        };
+        this.error(
+            ErrorCodes.parser.SYNTAX_ERROR,
+            "Syntax error"
+        )
     }
 
-    private ft_type(args: Args): ASTNode | null {
+    private ft_type(args: Args): TypeNode | null {
+        // Check for generic type parameters first: <T, U, V>
+        let genericParams: TypeParameterNode[] | undefined = undefined;
+        if (this.match(TokenType.LT)) {
+            genericParams = this.type_parameters(args);
+
+            if (!this.check(TokenType.GT)) {
+                if (!this.match(TokenType.Identifier)) {
+                    this.error(
+                        ErrorCodes.parser.EXPECTED_IDENTIFIER,
+                        "Expected a generic type parameter identifier.",
+                        "Generic type parameters must be valid identifiers like 'T', 'U', 'K', 'V'.",
+                        `Found token: '${this.peek().value}' instead of an identifier.`,
+                        ["identifier"],
+                        "'<T>' or '<T, U, V>'"
+                    );
+                }
+            }
+
+            if (!this.match(TokenType.GT)) {
+                this.error(
+                    ErrorCodes.parser.MISSING_GREATER_THAN,
+                    "Expected closing '>' for generic type parameters.",
+                    "Make sure all generic type parameter lists are closed with '>'.",
+                    `Found token: '${this.peek().value}' instead of '>'`,
+                    [">"],
+                    "'<T>' or '<T, U>'"
+                );
+            }
+        }
+
+        // Now check for the parameter list
         if (!this.match(TokenType.LeftParen)) {
+            // If we parsed generic params but no function follows, this is an error
+            if (genericParams) {
+                this.error(
+                    ErrorCodes.parser.MISSING_LEFT_PAREN,
+                    "Expected '(' after generic type parameters.",
+                    "Generic function types must have a parameter list following the generic parameters.",
+                    `Found token: '${this.peek().value}' instead of '('`,
+                    ["("],
+                    "'<T>(value: T) -> T'"
+                );
+            }
             return null; // Not a function type; let caller handle
         }
 
         let type = "tuple";
-        const types: ASTNode[] = [];
+        const types: TypeNode[] = [];
 
+        // Parse parameter types
         if (!this.check(TokenType.RightParen)) {
-            types.push(this.type(args));
+            // Handle optional parameter names
+            if (
+                this.peek(0).type == TokenType.Identifier &&
+                this.peek(1).type == TokenType.Colon
+            ) {
+                this.advance(); // Skip parameter name
+                this.advance(); // Skip colon
+            }
+
+            const paramType = this.type(args);
+            types.push(paramType);
 
             while (this.match(TokenType.Comma)) {
-                if (this.check(TokenType.RightParen)) break; // Allow trailing comma
+                if (this.check(TokenType.RightParen)) break;
+
+                if (
+                    this.peek(0).type == TokenType.Identifier &&
+                    this.peek(1).type == TokenType.Colon
+                ) {
+                    this.advance();
+                    this.advance();
+                }
+
                 types.push(this.type(args));
             }
         }
@@ -1259,11 +1332,14 @@ export class Parser {
             types.push(this.type(args));
         }
 
-        return new TypeNode(this.peek(), type, types);
+        const typeNode = new TypeNode(this.peek(), type, types);
+        typeNode.genericParams = genericParams;
+
+        return typeNode;
     }
 
     // Type "<" type ">"
-    private other_type(args: Args): ASTNode | null {
+    private other_type(args: Args): TypeNode | null {
         if (!this.match(TokenType.Identifier)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_IDENTIFIER,
@@ -1282,7 +1358,7 @@ export class Parser {
             return new TypeNode(this.peek(), value);
         }
 
-        const types: ASTNode[] = [];
+        const types: TypeNode[] = [];
 
         if (!this.check(TokenType.GT)) {
             types.push(this.type(args));
@@ -1628,7 +1704,9 @@ export class Parser {
     }
 
     private is_unary_operator(type: TokenType): boolean {
-        return type === TokenType.ExclamationMark
+        return type === TokenType.ExclamationMark ||
+            type === TokenType.Mut ||
+            type === TokenType.Ampersand
     }
 
     private postfix_expression(args: Args): ASTNode {
@@ -1838,6 +1916,7 @@ export class Parser {
                     const fields = this.struct_initializer(args);
                     return new StructInitNode(token, iden, fields);
                 }
+
                 return iden;
             }
             case TokenType.LeftParen: {
@@ -2123,7 +2202,7 @@ export class Parser {
             this.error(
                 ErrorCodes.parser.MISSING_LEFT_BRACE,
                 "Expected 'if' to begin if let expression.",
-                "Struct initialization requires opening with a curly brace '{'.",
+                "If initialization requires opening with a curly brace '{'.",
                 `Found token: '${this.peek().value}' instead of '{'`,
                 ["{"],
                 "'Person {name: \"John\", age: 30}'"
@@ -2599,8 +2678,22 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
     private struct_body(args: Args): ASTNode[] {
         const fields: ASTNode[] = [];
 
-        while (!this.check(TokenType.RightBrace)) {
-            fields.push(this.field(args));
+        while (!this.check(TokenType.RightBrace) && !this.is_at_end()) {
+            const before = this.peek();
+            const field = this.field(args);
+            fields.push(field);
+
+
+            if (this.peek() === before) {
+                this.error(
+                    ErrorCodes.parser.MISSING_COMMA,
+                    "Parser did not advance after field.",
+                    "Possible infinite loop due to unrecognized or invalid struct member.",
+                    `Stuck at token: '${this.peek().value}'`,
+                    ["identifier", "mut"],
+                    "'name: string,'"
+                );
+            }
         }
 
         return fields;
@@ -2631,15 +2724,21 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
         let data_type = this.type_annotation(args);
 
         // Expect a semicolon after the field declaration
-        if (!this.match(TokenType.SemiColon)) {
-            this.error(
-                ErrorCodes.parser.MISSING_SEMICOLON,
-                "Expected ';' after field declaration.",
-                "Each field declaration in a struct must end with a semicolon ';'.",
-                `Found token: '${this.peek().value}' instead of ';'`,
-                [";"],
-                "'name: string;'"
-            );
+        if (this.match(TokenType.SemiColon)) {
+
+        } else if (this.match(TokenType.Comma)) {
+
+        } else {
+            if (!this.check(TokenType.RightBrace)) {
+                this.error(
+                    ErrorCodes.parser.MISSING_COMMA,
+                    "Expected ',' after field declaration.",
+                    "Each field declaration in a struct must end with a comma ','.",
+                    `Found token: '${this.peek().value}' instead of ','`,
+                    [","],
+                    "'name: string,'"
+                );
+            }
         }
 
         return new FieldNode(this.peek(), identifier, mutable, data_type);

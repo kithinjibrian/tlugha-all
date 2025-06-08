@@ -1,7 +1,7 @@
-fun get<T, C>(url: str, config: C): T {
+fun get<T>(url: str, config: T): str {
   return root::builtin::__http_get__(url, config);
 }
 
-fun post<D, C, R>(url: str, data: D, config: C): R {
+fun post<D, C>(url: str, data: D, config: C): str {
     return root::builtin::__http_post__(url, data, config);
 }

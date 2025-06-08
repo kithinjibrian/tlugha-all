@@ -4,28 +4,28 @@ use super::proc_macro::{ Token };
 enum AST {
     Number(num),
     String(str),
-    Array(Array<AST>),
+    Array(AST),
     Type {
-        name: str;
-        args: Array<AST>;
+        name: str,
+        args: Array<AST>
     },
     Field {
-        identifier: str;
-        data_type: Type;
+        identifier: str,
+        data_type: Type
     },
     Struct {
-        name: str;
-        body: Array<AST>;
+        name: str,
+        body: Array<AST>
     }
 }
 
 struct Args {
-    statement: bool;
-    no_init: bool;
-    constant: bool;
-    ignore_type: bool;
-    skip_struct_init: bool;
-    attributes: Array<AST>;
+    statement: bool,
+    no_init: bool,
+    constant: bool,
+    ignore_type: bool,
+    skip_struct_init: bool,
+    attributes: Array<AST>
 }
 
 impl Args {
@@ -42,8 +42,8 @@ impl Args {
 }
 
 struct Parser {
-    current: num;
-    tokens: Array<Token>;
+    current: num,
+    tokens: Array<Token>
 }
 
 impl Parser {

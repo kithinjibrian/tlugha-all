@@ -45,10 +45,10 @@ fun two_char(c1: str, c2: str): str {
 }
 
 struct Lexer {
-    input: str;
-    mut line: num;
-    mut column: num;
-    mut position: num;
+    input: str,
+    mut line: num,
+    mut column: num,
+    mut position: num
 }
 
 impl Lexer {

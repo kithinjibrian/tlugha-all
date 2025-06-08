@@ -28,22 +28,41 @@ import {
     LambdaNode,
     StructNode,
     TC_StructModule,
-    FieldNode
+    FieldNode,
+    Module,
+    UseNode,
+    MemberExpressionNode,
+    IdentifierNode,
+    SpreadElementNode,
+    EnumNode,
+    TC_EnumModule,
+    EnumVariantNode,
+    TupleVariantNode
 } from "../types";
 import { HM, Ret } from "./hm";
-import { tcon, tcon_ex, tfun, tvar, Types } from "./type";
+import { ArrayTypes, NumberTypes, StringTypes, tcon, tcon_ex, tfun, TupleTypes, tvar, Types } from "./type";
 
 export class TypeChecker implements ASTVisitor {
     private extension: ExtensionStore<unknown> = ExtensionStore.get_instance("typechecker");
     public hm: HM;
-    public primitives: string[] = ["num", "bool", "str", "unit", "Self"]
+    public primitives: Record<any, any> = {
+        "num": NumberTypes.get_instance(),
+        "bool": {},
+        "str": StringTypes.get_instance(),
+        "date": {},
+        "unit": {},
+        "Self": {},
+    }
+
     public subst: Map<any, any> = new Map();
 
     constructor(
         public file: string,
-        public ast: ASTNode | null,
-        public root: TC_Module,
-        public lugha: Function
+        public rd: string,
+        public wd: string,
+        public root: Module,
+        public lugha: Function,
+        public ast?: ASTNode
     ) {
         this.hm = new HM(this.file);
     }
@@ -133,7 +152,17 @@ export class TypeChecker implements ASTVisitor {
         }
     }
 
-    async run() {
+    async run(ext_ignore?: boolean) {
+        if (ext_ignore == undefined) {
+            for (const ext of this.extension.get_extensions()) {
+                for (const fn of ext.before_run?.()) {
+                    await fn({
+                        root: this.root,
+                        file: this.file
+                    })
+                }
+            }
+        }
 
         if (this.ast) {
             await this.visit(this.ast, { frame: this.root.frame, module: this.root });
@@ -159,7 +188,7 @@ export class TypeChecker implements ASTVisitor {
 
     async visitExpressionStatement(
         node: ExpressionStatementNode,
-        { frame, module }: { frame: TypeFrame, module: TC_Module }
+        { frame, module }: { frame: TypeFrame, module: Module }
     ) {
         await this.visit(node.expression, { frame, module });
 
@@ -167,6 +196,96 @@ export class TypeChecker implements ASTVisitor {
             type: "type",
             value: tcon("unit", node)
         };
+    }
+
+    async visitUse(
+        node: UseNode,
+        { frame, module }: { frame: TypeFrame, module: Module }
+    ) {
+        const self = this;
+        function resolveModule(path: string[]): Module | undefined {
+            let mod, start = 1;
+            if (path[0] == "super") {
+                if (module.parent) {
+                    start = 2;
+                    mod = module.parent.children.find(m => m.name === path[1]);
+                }
+            } else
+                mod = self.root.children.find(m => m.name === path[0]);
+
+            if (!mod) {
+                self.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Module '${path[0]}' is not defined.`,
+                    "Tried to access a module that doesn't exist in the root scope.",
+                    `No top-level module named '${path[0]}' was found.`,
+                    ["defined module"]
+                );
+
+                throw new Error("");
+            }
+
+            for (let i = start; i < path.length; i++) {
+
+                mod = mod.children.find(m => m.name === path[i]);
+                if (!mod) {
+                    self.error(
+                        node,
+                        ErrorCodes.runtime.UNDEFINED_MODULE,
+                        `Module path '${path.slice(0, i + 1).join("::")}' is not defined.`,
+                        "Nested module does not exist in the specified path.",
+                        `Failed at '${path[i]}' in path '${path.join("::")}'.`,
+                        ["existing module path"]
+                    );
+
+                    throw new Error("");
+                }
+            }
+            return mod;
+        }
+
+        if (node.list) {
+            const mod = resolveModule(node.path.path);
+            if (!mod) return;
+
+            node.list.items.forEach(item => {
+                const symbol = mod.frame.get(item.name);
+
+                if (
+                    !symbol ||
+                    symbol instanceof StructNode
+                ) {
+                    mod.children.forEach(m => {
+                        if (m.name == item.name) {
+                            module.add_submodule(m)
+                        }
+                    })
+
+                    return;
+                }
+
+                frame.define(item.alias ?? item.name, symbol);
+            });
+        } else {
+            const path = node.path.path;
+            const mod = resolveModule(path.slice(0, -1));
+            if (!mod) return;
+
+            const symbol = mod.frame.get(path[path.length - 1]);
+
+            if (!symbol) {
+                mod.children.forEach(m => {
+                    if (m.name == path[path.length - 1]) {
+                        module.add_submodule(m)
+                    }
+                })
+
+                return;
+            }
+
+            frame.define(node.alias ?? path[path.length - 1], symbol);
+        }
     }
 
     async visitLambda(
@@ -377,18 +496,11 @@ export class TypeChecker implements ASTVisitor {
                 });
 
                 if (!result || result.type !== "type") {
-                    this.error(
-                        paramNode,
-                        "INVALID_TYPE_ARGUMENT",
-                        "Expected a valid type in generic call."
-                    );
+                    this.error(paramNode, "INVALID_ARGUMENT_TYPE", "Expected a value expression.");
                 }
 
-                type_params.push(result.value);
+                type_params.push(result.value)
             }
-
-            // Optional: Check arity matches function's expected generic count
-            // this.checkTypeParameterArity(instantiated, type_params.length, node);
         }
 
         const instantiated = this.hm.instantiate(callee.value, type_params);
@@ -396,18 +508,20 @@ export class TypeChecker implements ASTVisitor {
         // Visit argument expressions and collect their types
         const args: Types[] = [];
 
-        for (const argNode of node.args) {
+        for (let argNode of node.args) {
             const result = await this.visit(argNode, {
                 frame,
                 expression: true,
                 module,
             });
 
-            if (!result || result.type !== "type") {
-                this.error(argNode, "INVALID_ARGUMENT_TYPE", "Expected a value expression.");
+            if (result) {
+                if (result.type == "type") {
+                    args.push(result.value);
+                } else if (result.type == "scheme") {
+                    args.push(this.hm.instantiate(result.value))
+                }
             }
-
-            args.push(result.value);
         }
 
         // Create return type variable and expected function type: (args) => ret
@@ -423,9 +537,57 @@ export class TypeChecker implements ASTVisitor {
         };
     }
 
+    async get_object(
+        node: MemberExpressionNode,
+        { frame, module }: { frame: TypeFrame, module: Module }
+    ) {
+        const object = await this.visit(node.object, { frame, module });
+
+        let propertyValue;
+        if (node.computed) {
+            // propertyValue = await this.visit(node.property, { frame, module });
+        } else {
+            propertyValue = (node.property as IdentifierNode).name;
+        }
+
+        return {
+            object,
+            property: propertyValue
+        }
+    }
+
+    async visitMemberExpression(
+        node: MemberExpressionNode,
+        { frame, expression, module }: { frame: TypeFrame, expression?: boolean, module: Module }
+    ) {
+        const { object, property } = await this.get_object(node, { frame, module });
+
+        if (object?.type == "type" && property) {
+            const value = await object.value?.methods?.get(property);
+            return {
+                type: "scheme",
+                value: this.hm.generalize(value, frame)
+            };
+        }
+    }
+
+    async visitSpreadElement(
+        node: SpreadElementNode,
+        { frame, expression, module }: { frame: TypeFrame, expression?: boolean, module: Module }
+    ) {
+        const type = await this.visit(node.expression, { frame, expression, module });
+
+        if (type?.type == "type") {
+            return {
+                type: "type",
+                value: tcon_ex("()", [type.value], node)
+            }
+        }
+    }
+
     async visitIfElse(
         node: IfElseNode,
-        { frame, expression, module }: { frame: TypeFrame, expression?: boolean, module: TC_Module }
+        { frame, expression, module }: { frame: TypeFrame, expression?: boolean, module: Module }
     ): Promise<Ret | undefined> {
         const cond = await this.visit(node.condition, { frame, module });
 
@@ -563,7 +725,7 @@ export class TypeChecker implements ASTVisitor {
     getScopedSymbol(
         node: ScopedIdentifierNode,
         { frame, module }: { frame: TypeFrame; module: TC_Module }
-    ) {
+    ): Ret {
         const __p = (search_frame: TypeFrame, name: string) => {
             const symbol = search_frame.get(name);
 
@@ -659,7 +821,86 @@ export class TypeChecker implements ASTVisitor {
     ) {
         const symbol = this.getScopedSymbol(node, { frame, module });
 
+
         return symbol;
+    }
+
+    async visitEnum(
+        node: EnumNode,
+        { frame, module }: { frame: TypeFrame, module: TC_Module }
+    ) {
+        const newModule = new TC_EnumModule(node.name, frame);
+        const new_frame = newModule.frame;
+        module.add_submodule(newModule);
+
+        const placeholder = {
+            tag: "TSum",
+            tsum: {
+                name: node.name,
+                variants: {}
+            }
+        };
+
+        const _enum = {
+            type: "type",
+            value: placeholder
+        };
+
+        frame.define(node.name, _enum);
+
+        if (node.type_parameters) {
+            for (const src of node.type_parameters) {
+                await this.visit(src, { frame: new_frame, module });
+            }
+        }
+
+        const variants: Record<string, Types> = {};
+
+        for (const src of node.body) {
+            const type = await this.visit(src, { frame: new_frame, module: newModule });
+
+            if (type?.type == "type") {
+                variants[src.name] = type.value;
+            }
+
+        }
+
+        placeholder.tsum.variants = variants;
+
+        return _enum;
+    }
+
+    async visitEnumVariant(
+        node: EnumVariantNode,
+        { frame, module }: { frame: TypeFrame, module: Module }
+    ) {
+        if (!node.value) {
+            return {
+                type: "type",
+                value: tcon("unit", node)
+            }
+        }
+
+        return await this.visit(node.value, { frame, module })
+    }
+
+    async visitTupleVariant(
+        node: TupleVariantNode,
+        args?: Record<string, any>
+    ) {
+        const types = [];
+        for (const src of node.types) {
+            const type = await this.visit(src, args);
+
+            if (type?.type == "type") {
+                types.push(type.value);
+            }
+        }
+
+        return {
+            type: "type",
+            value: tcon_ex("()", types, node, TupleTypes.get_instance())
+        }
     }
 
     async visitStruct(
@@ -672,9 +913,26 @@ export class TypeChecker implements ASTVisitor {
 
         const new_frame = newModule.frame;
 
+        const placeholder = {
+            tag: "TRec",
+            trec: {
+                name: node.name,
+                types: {}
+            }
+        };
+
+        const struct = {
+            type: "type",
+            value: placeholder
+        };
+
+        frame.define(node.name, struct);
+
         const types: Record<string, Types> = {};
 
         for (const src of node.body) {
+            if (src instanceof FunctionDecNode) continue;
+
             const name = src instanceof FieldNode ? src.field.name : "";
 
             const t = await this.visit(src, { frame: new_frame, module: newModule })
@@ -684,18 +942,7 @@ export class TypeChecker implements ASTVisitor {
             }
         }
 
-        const struct = {
-            type: "type",
-            value: {
-                tag: "TRec",
-                trec: {
-                    name: node.name,
-                    types
-                }
-            }
-        }
-
-        frame.define(node.name, struct);
+        placeholder.trec.types = types;
 
         return struct;
     }
@@ -725,17 +972,67 @@ export class TypeChecker implements ASTVisitor {
         }
     }
 
+    async resolve_type(node: TypeNode, typeName: string, methods: any, frame: TypeFrame) {
+        if (node.types) {
+            const elem = await this.visit(node.types[0], { frame });
+
+            if (elem?.type == "type")
+                return tcon_ex(typeName, [elem?.value], node, methods);
+        }
+        throw new Error(`Expected type parameters for ${typeName}`);
+    }
+
     async visitType(
         node: TypeNode,
         { frame, module }: { frame: TypeFrame, module: TC_Module }
     ) {
-        if (this.primitives.includes(node.name)) {
+        if (node.genericParams) {
+            for (let src of node.genericParams) {
+                await this.visit(src, { frame, module });
+            }
+        }
+
+        if (node.name in this.primitives) {
             return {
                 type: "type",
-                value: tcon(node.name, node)
+                value: tcon(node.name, node, this.primitives[node.name])
             }
+        } else if (node.name == "->") {
+            if (node.types) {
+                const params = node.types.slice(0, node.types.length - 1);
+                const ret_type = node.types[node.types.length - 1];
+
+                let p_types = [], r_type = await this.visit(ret_type, { frame, module });
+
+                for (let p of params) {
+                    let m = await this.visit(p, { frame, module });
+
+                    if (m?.type == "type")
+                        p_types.push(m.value)
+                }
+
+                if (r_type?.type == "type") {
+                    const fun = tfun(tcon_ex("Array", p_types, null), r_type.value, node);
+
+                    return {
+                        type: "type",
+                        value: fun
+                    }
+                }
+            }
+        } else if (node.name == "tuple") {
+            return {
+                type: "type",
+                value: await this.resolve_type(node, "()", TupleTypes.get_instance(), frame)
+            };
+        } else if (node.name == "Array") {
+            return {
+                type: "type",
+                value: await this.resolve_type(node, "[]", ArrayTypes.get_instance(), frame)
+            };
         } else {
             let value = frame.get(node.name);
+
             if (value) return value;
 
             this.error(

@@ -14,8 +14,8 @@ enum AST {
 }
 
 struct Parser {
-    current: number;
-    tokens: Array<Token>;
+    current: num,
+    tokens: Array<Token>
 }
 
 impl Parser {

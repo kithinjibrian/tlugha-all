@@ -7,10 +7,10 @@ fun print<T>(format: str, ...rest: (T)): unit {
     root::builtin::__print__(format.format(...rest));
 }
 
-fun read<T>(filename: str, encoding: str): unit {
+fun read(filename: str, encoding: str): str {
     return root::builtin::__read__(filename, encoding);
 }
 
-fun write<T>(filename: str, data: str): unit {
+fun write(filename: str, data: str): unit {
     root::builtin::__write__(filename, data);
 }

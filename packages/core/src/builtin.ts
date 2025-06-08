@@ -13,26 +13,26 @@ export type Builtin =
     }
     | {
         type: "variable",
-        signature?: string,
+        signature: string,
         value: any
     }
 
 export const builtin: Record<string, Builtin> = {
     __version__: {
         type: "variable",
-        signature: "string",
+        signature: "str",
         value: "Lugha v1.0.0"
     },
     __now__: {
         type: "function",
-        signature: "<T, U>(args: T) -> U",
+        signature: "() -> date",
         exec: (args: any[]) => {
             return new Date();
         }
     },
     __re_test__: {
         type: "function",
-        signature: "<T, U>(args: T) -> U",
+        signature: "(str, str) -> bool",
         exec: (args: any[]) => {
             const regex = new RegExp(args[0]);
             return regex.test(args[1]);
@@ -40,14 +40,14 @@ export const builtin: Record<string, Builtin> = {
     },
     __print__: {
         type: "function",
-        signature: "<T, U>(args: T) -> U",
+        signature: "(str) -> unit",
         exec: (args: any[]) => {
             console.log(args[0]);
         }
     },
     __panic__: {
         type: "function",
-        signature: "<T, U>(args: T) -> U",
+        signature: "(str) -> unit",
         exec: (args: any[]) => {
             throw new Panic(`PANIC:
 ${args[0]}
@@ -56,7 +56,7 @@ ${args[0]}
     },
     __set_timeout__: {
         type: "function",
-        signature: "<T, U>(args: T) -> U",
+        signature: "bool",
         has_callback: true,
         async: true,
         exec: async (args: any[]) => {
@@ -77,7 +77,7 @@ ${args[0]}
     __http_get__: {
         type: "function",
         async: true,
-        signature: "<T, U>(args: T) -> U",
+        signature: "<T>(str, T) -> str",
         exec: async (args: any[]) => {
             try {
                 const res = await axios.get(args[0], args[1]);
@@ -91,7 +91,7 @@ ${args[0]}
     __http_post__: {
         type: "function",
         async: true,
-        signature: "<T, U>(args: T) -> U",
+        signature: "<D, T>(str, D, T) -> str",
         exec: async (args: any[]) => {
             try {
                 const res = await axios.post(args[0], args[1], args[2]);

@@ -1,22 +1,13 @@
-import json;
-
-use json::{ from_str, Deserialize };
-
 use std::io::{ print };
 
-#[derive(Deserialize)]
 struct Body {
-    name: str;
-    email: str;
-    phone: str;
+    name: str,
+    email: str,
+    phone: str
 }
 
 fun main(): unit {
-    let  k = 90;
+    let js = 90;
 
-    let js = map {
-        k
-    };
-
-    print("{}", js);
+    // print("{}", "string");
 }

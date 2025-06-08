@@ -43,6 +43,18 @@ export class TypeFrame extends OGFrame {
     }
 }
 
+export class BorrowFrame extends OGFrame {
+    return_flag: boolean = false;
+    return_value: any = [];
+
+    constructor(
+        parent: BorrowFrame | null = null,
+        name: string = ""
+    ) {
+        super(name, parent);
+    }
+}
+
 export class Frame extends OGFrame {
     stack: any[] = [];
     break_flag: boolean = false;

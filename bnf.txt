@@ -76,7 +76,7 @@ struct_statement ::= export_modifier? "struct" identifier (type_parameters)? "{"
 type_parameters ::= "<" type_parameter ("," type_parameter)* ">"
 type_arguments ::= "<" type ("," type)* ">"
 struct_body ::= (struct_field)*
-struct_field ::= ("mut")? identifier type_annotation ";"
+struct_field ::= ("mut")? identifier type_annotation ","
 struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? function_body
 
 enum_statement ::= export_modifier? "enum" identifier (type_parameters)? "{" (enum_variants)? "}"

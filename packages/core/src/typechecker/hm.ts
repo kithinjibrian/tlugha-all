@@ -183,6 +183,9 @@ ${example ? `Example: ${example}` : ''}`;
                     .join(", ");
                 return `{ ${fields} }`;
             }
+            case "TSum": {
+                return ""
+            }
         }
     }
 
@@ -239,6 +242,7 @@ ${example ? `Example: ${example}` : ''}`;
 
         for (let i = 0; i < vars.length; i++) {
             const v = vars[i];
+
             const originalName = v.tag === "TVar" ? v.tvar : undefined;
             const tv = tvar(null, originalName);
 
@@ -248,9 +252,7 @@ ${example ? `Example: ${example}` : ''}`;
 
                 this.constraint_eq(tv, params[i], v.ast);
             } else {
-
                 const originalName = v.tag === "TVar" ? v.tvar : undefined;
-                console.log(originalName);
 
                 subst.setType(v, tv);
             }
@@ -264,18 +266,39 @@ ${example ? `Example: ${example}` : ''}`;
     }
 
     tvs(type: Types): Set<Types> {
+        const result = new Set<Types>();
+
+        const addAll = (s: Set<Types>) => {
+            for (const t of s) {
+                result.add(t);
+            }
+        };
+
         switch (type.tag) {
             case "TVar":
-                return new Set([type]);
+                result.add(type);
+                break;
+
             case "TCon":
-                return new Set(
-                    type.tcon.types.flatMap(t => [...this.tvs(t)])
-                );
+                for (const t of type.tcon.types) {
+                    addAll(this.tvs(t));
+                }
+                break;
+
             case "TRec":
-                return new Set(
-                    Object.values(type.trec.types).flatMap(t => [...this.tvs(t)])
-                );
+                for (const t of Object.values(type.trec.types)) {
+                    addAll(this.tvs(t));
+                }
+                break;
+
+            case "TSum":
+                for (const t of Object.values(type.tsum.variants)) {
+                    addAll(this.tvs(t));
+                }
+                break;
         }
+
+        return result;
     }
 
     bind(a: Types, b: Types, ast: ASTNode | null): Map<Types, Types> | null {
@@ -325,7 +348,7 @@ ${example ? `Example: ${example}` : ''}`;
                         name: type.tcon.name,
                         types: applied as Types[],
                     },
-                    ast: type.ast
+                    ast: type.ast,
                 };
             }
             case "TRec": {

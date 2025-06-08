@@ -1,12 +1,12 @@
 type next_fn = () -> unit;
 
 struct Req {
-    query: Map<str, str>;
+    query: Map<str, str>
 }
 
 struct Res {
-    status: num;
-    mut data: str;
+    status: num,
+    mut data: str
 }
 
 impl Res {
@@ -29,13 +29,13 @@ impl Res {
 type req_t = Req;
 
 struct Handler {
-    method: str;
-    path: str;
-    handlers: Array<Function>;
+    method: str,
+    path: str,
+    handlers: Array<Function>
 }
 
 struct Server {
-    routes: Array<Handler>;
+    routes: Array<Handler>
 }
 
 impl Server {

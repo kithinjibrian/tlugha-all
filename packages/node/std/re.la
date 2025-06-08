@@ -5,7 +5,7 @@ enum Result<T, E> {
 }
 
 struct Regex {
-    regex: str;
+    regex: str
 }
 
 impl Regex {

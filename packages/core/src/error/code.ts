@@ -76,6 +76,18 @@ export const ErrorCodes = {
         UNDEFINED_VARIABLE: "RUN011",
         MISSING_MAIN: "RUN012",
     },
+    name_res: {
+        UNDEFINED_SYMBOL: "RUN001",
+    },
+    borrow_checker: {
+        MOVE_ERROR: "BC001",
+        IMMUTABLE_REASSIGNMENT: "BC002",
+        ASSIGN_TO_BORROWED: "BC003",
+        USE_AFTER_MOVE: "BC004",
+        IMMUTABLE_AND_MUTABLE_BORROW: "BC005",
+        MULTIPLE_MUTABLE_BORROWS: "BC006",
+        MUTABLE_BORROW_OF_IMMUTABLE: "BC007",
+    },
     runtime: {
         UNDEFINED_SYMBOL: "RUN001",
         UNDEFINED_MODULE: "RUN002",

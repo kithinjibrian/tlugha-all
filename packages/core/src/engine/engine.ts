@@ -599,7 +599,6 @@ export class Engine implements ASTVisitor {
         for (const n of node.body) {
             await this.visit(n, { frame: new_frame, module });
 
-
             if (
                 new_frame.return_flag ||
                 new_frame.break_flag ||
@@ -614,6 +613,8 @@ export class Engine implements ASTVisitor {
             const last_value = new_frame.stack[new_frame.stack.length - 1];
             frame.stack.push(last_value);
         }
+
+        new_frame.stack = [];
 
         frame.continue_flag = new_frame.continue_flag;
         frame.break_flag = new_frame.break_flag;
@@ -662,8 +663,15 @@ export class Engine implements ASTVisitor {
 
         const evaluatedArgs: Type<any>[] = [];
 
-        for (const arg of node.args) {
+        for (let arg of node.args) {
+            let spread = false;
+            if (arg instanceof SpreadElementNode) {
+                arg = arg.expression;
+                spread = true
+            }
+
             await this.visit(arg, { frame, module });
+
             const argValue = frame.stack.pop();
             if (!argValue) {
                 this.error(
@@ -676,7 +684,15 @@ export class Engine implements ASTVisitor {
                     "Example: print('{}', 1 + 2)"
                 );
             }
-            evaluatedArgs.push(argValue);
+
+            if (spread) {
+                for (const val of argValue) {
+                    evaluatedArgs.push(val);
+                }
+            } else {
+                evaluatedArgs.push(argValue);
+            }
+
         }
 
         if (node.callee instanceof ScopedIdentifierNode) {
@@ -859,8 +875,10 @@ export class Engine implements ASTVisitor {
                 );
             }
         } else {
-            left = this.getScopedSymbol(node.left as ScopedIdentifierNode, { frame, module });
-            if (!left) {
+            const ignore_null_left = node.operator == "=";
+
+            left = await this.getScopedSymbol(node.left as ScopedIdentifierNode, { frame, ignore_null_left, module });
+            if (!left && !ignore_null_left) {
                 this.error(
                     node.left,
                     ErrorCodes.runtime.UNDEFINED_VARIABLE,
@@ -997,7 +1015,30 @@ export class Engine implements ASTVisitor {
             module
         };
 
-        frame.stack.push(await operand.not(env));
+        let result: Type<any>;
+        switch (node.operator) {
+            case "!":
+                result = await operand.not(env);
+                break;
+            case "mut":
+                result = operand;
+                break;
+            case "&":
+                result = operand;
+                break;
+            default:
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                    `Unsupported operator '${node.operator}' in unary expression.`,
+                    "This unary operator is not recognized or allowed.",
+                    `Operator '${node.operator}' is invalid in this context.`,
+                    ["!", "mut", "&"],
+                    "!x"
+                );
+        }
+
+        frame.stack.push(result);
     }
 
     async visitBinaryOp(
@@ -1110,15 +1151,14 @@ export class Engine implements ASTVisitor {
         }
     }
 
-    getScopedSymbol(
+    async getScopedSymbol(
         node: ScopedIdentifierNode,
-        { frame, module }: { frame: Frame; module: Module }
+        { frame, ignore_null_left, module }: { frame: Frame; ignore_null_left?: boolean; module: Module }
     ) {
         const __p = (search_frame: Frame, name: string) => {
             const symbol = search_frame.get(name);
 
-            if (!symbol) {
-                console.log(search_frame.parent);
+            if (!symbol && !ignore_null_left) {
                 this.error(
                     node,
                     ErrorCodes.runtime.UNDEFINED_SYMBOL,
@@ -1215,7 +1255,7 @@ export class Engine implements ASTVisitor {
         node: ScopedIdentifierNode,
         { frame, module }: { frame: Frame, module: Module }
     ) {
-        const symbol = this.getScopedSymbol(node, { frame, module });
+        const symbol = await this.getScopedSymbol(node, { frame, module });
         if (symbol instanceof Type) {
             frame.stack.push(symbol);
         } else if (symbol instanceof StructNode) {

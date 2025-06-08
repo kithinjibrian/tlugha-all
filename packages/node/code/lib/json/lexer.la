@@ -20,10 +20,10 @@ enum TokenType {
 }
 
 struct Token {
-    line: number;
-    column: number;
-    line_str: string;
-    token_type: TokenType;
+    line: num,
+    column: num,
+    line_str: str,
+    token_type: TokenType
 }
 
 fun one_char(c: string): TokenType {
@@ -40,10 +40,10 @@ fun one_char(c: string): TokenType {
 }
 
 struct Lexer {
-    input: string;
-    mut line: number;
-    mut column: number;
-    mut position: number;
+    input: str,
+    mut line: num,
+    mut column: num,
+    mut position: num
 }
 
 impl Lexer {

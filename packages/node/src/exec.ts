@@ -10,11 +10,13 @@ import {
 import {
     builtin,
     lugha,
+    pipe_borrowcheck,
     pipe_engine,
     pipe_expandmacro,
     pipe_lp,
     pipe_procmacro,
-    pipe_read
+    pipe_read,
+    pipe_typecheck
 } from "./types"
 
 import * as path from 'path';
@@ -52,6 +54,8 @@ export async function exec({
                 pipe_lp,
                 pipe_procmacro,
                 pipe_expandmacro,
+                //pipe_borrowcheck,
+                pipe_typecheck,
                 pipe_engine
             ],
             wd: a.dir,
