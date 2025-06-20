@@ -27,6 +27,6 @@ async function main() {
 
 if (require.main == module) {
     main().then(e => {
-        console.log(e)
+        //  console.log(e)
     })
 }

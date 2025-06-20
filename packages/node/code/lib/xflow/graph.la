@@ -1,0 +1,161 @@
+import storex;
+
+use std::io::print;
+use storex::{ Store };
+
+type label = str;
+type cond_fn = (store: Store) -> str;
+type exec_fn = (store: Store) -> unit;
+
+module consts {
+    const START: label = "__START__";
+    const END: label = "__END__";
+}
+
+trait Checkpointer {
+    fun save(self: Self, checkpoint: Store): unit;
+}
+
+enum Edge {
+    Forward(label),
+    Conditional(cond_fn, Map<str, label>),
+}
+
+struct Node {
+    exec: exec_fn
+}
+
+struct Graph<T: Checkpointer> {
+    checkpointer: T,
+    store: Store,
+    nodes: Map<label, Node>,
+    edges: Map<label, Array<Edge>>,
+}
+
+struct GraphOutput {
+    execution_path: Array<label>,
+}
+
+impl Graph {
+    fun new(
+        store: Store,
+        checkpointer: T
+    ): Graph {
+        Graph {
+            store,
+            checkpointer,
+            nodes: Map {
+                [consts::START]: Node {
+                    exec: fun (s) -> Result::Ok(s)
+                },
+            },
+            edges: Map {}
+        }
+    }
+
+    fun wrapper(
+        self: Self,
+        exec: exec_fn
+    ): exec_fn {
+        return fun (s) -> {
+            let result = exec(s);
+
+            if let Ok(_) = result {
+                self.checkpointer.save(self.store);
+            };
+        };
+    }
+
+    fun add_node(
+        self: Self, 
+        label: label, 
+        exec: exec_fn
+    ): Self {
+        self.nodes.insert(label, Node { exec: self.wrapper(exec) });
+
+        self
+    }
+
+    fun add_conditional_edge(
+        self: Self, 
+        from: label, 
+        cond: cond_fn,
+        braches: Map<str, label>
+    ): Self {
+        let edge = self.edges.get(from);
+
+        if let Err(e) = edge {
+            self.edges.insert(from, []);
+        }
+
+        self.edges.get(from)
+            .unwrap()
+            .push(Edge::Conditional(cond, braches));
+
+        self
+    }
+
+    fun add_edge(
+        self: Self, 
+        from: label, 
+        to: label
+    ): Self {
+        let edge = self.edges.get(from);
+
+        if let Err(e) = edge {
+            self.edges.insert(from, []);
+        }
+
+        self.edges.get(from)
+            .unwrap()
+            .push(Edge::Forward(to));
+
+        self
+    }
+
+    fun run(self: Self): Result<GraphOutput, str> {        
+        let mut current = consts::START;
+        let execution_path = [];
+
+        while current != consts::END {
+            let node = self.nodes.get(current);
+            
+            execution_path.push(current);
+
+            if let Ok(n) = node {
+                if let Err(e) = n.exec(self.store) {
+                    return Err(e);
+                }
+            } else {
+                return node;
+            }
+
+            let edges = match self.edges.get(current) {
+                Ok(edges) => edges,
+                Err(e) => []
+            };
+
+            for edge in edges {
+                match edge {
+                    Edge::Forward(to) => {
+                        current = to;
+                        break;
+                    },
+                    Edge::Conditional(cond, branches) => {
+                        let next = cond(self.store);
+                        if let Ok(to) = branches.get(next) {
+                            current = to;
+                            break;
+                        }
+                    }   
+                }
+            }
+        }
+
+        Ok(
+            GraphOutput {
+                execution_path
+            }
+        )
+    }
+}

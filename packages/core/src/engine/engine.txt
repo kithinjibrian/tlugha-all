@@ -1,0 +1,2091 @@
+import { ErrorCodes, TError } from "../error/error";
+import { Panic } from "../error/panic";
+import { EnumType } from "../objects/enum";
+import { GeneratorType } from "../objects/generator";
+import { ModuleType } from "../objects/module";
+import { RangeType } from "../objects/range";
+import {
+    ArrayNode,
+    ASTNode,
+    ASTVisitor,
+    BinaryOpNode,
+    BlockNode,
+    BooleanNode,
+    CallExpressionNode,
+    EnumModule,
+    EnumNode,
+    EnumPatternNode,
+    EnumVariantNode,
+    ExpressionStatementNode,
+    FieldNode,
+    ForNode,
+    FunctionDecNode,
+    IdentifierNode,
+    IfElseNode,
+    IfLetNode,
+    ImplNode,
+    LambdaNode,
+    MapNode,
+    MatchNode,
+    MemberDecNode,
+    MemberExpressionNode,
+    ModuleNode,
+    NumberNode,
+    ProgramNode,
+    RangeNode,
+    ReturnNode,
+    StructModule,
+    PathNode,
+    SetNode,
+    SourceElementsNode,
+    SpreadElementNode,
+    StringNode,
+    StructInitNode,
+    StructNode,
+    TaggedNode,
+    TupleNode,
+    TupleVariantNode,
+    UnitType,
+    UseNode,
+    VariableNode,
+    VariableStatementNode,
+    WhileNode,
+    WildcardNode,
+    TypeNode,
+    Registry,
+    AttributeNode,
+    MetaItemNode,
+    UnaryOpNode,
+    TuplePatternNode,
+    StructPatternNode,
+    FieldPatternNode,
+    AlreadyInitNode,
+    WhileLetNode,
+    TraitNode,
+    TraitSigNode,
+    GeneratorDecNode,
+    YieldNode
+} from "../types";
+
+import { Frame, Module } from "../types";
+import { ArrayType } from "../types";
+import { Type } from "../types";
+import { FunctionType } from "../types";
+import { LambdaType } from "../types";
+import { MapType } from "../types";
+import { NumberType } from "../types";
+import { SetType } from "../types";
+import { StringType } from "../types";
+import { TupleType } from "../types";
+import { ExtensionStore } from "../types";
+
+import { create_object } from "../types";
+import { BoolType } from "../types";
+import { StructType } from "../types";
+import { MemberType } from "../types";
+
+import {
+    builtin,
+} from "../types"
+
+export class Engine implements ASTVisitor {
+    private extension: Record<string, ExtensionStore<unknown>> = {
+        "runtime": ExtensionStore.get_instance(),
+        "macro": ExtensionStore.get_instance("macro")
+    };
+
+    constructor(
+        public file: string,
+        public rd: string,
+        public wd: string,
+        public root: Module,
+        public lugha: Function,
+        public ast?: ASTNode,
+        public phase: string = "runtime"
+    ) {
+        // console.log("================>", this.phase);
+    }
+
+    public error(
+        ast: ASTNode | null,
+        code: string,
+        reason: string,
+        hint?: string,
+        context?: string,
+        expected?: string[],
+        example?: string
+    ): never {
+        let token = {
+            line: 1,
+            column: 1,
+            line_str: ""
+        };
+
+        if (ast && ast.token) {
+            token = ast.token;
+        }
+
+        throw new TError({
+            file: this.file,
+            code,
+            reason,
+            line: token.line,
+            column: token.column,
+            lineStr: token.line_str,
+            stage: this.phase,
+            hint,
+            context,
+            expected,
+            example
+        });
+    }
+
+    public async before_accept(
+        node: ASTNode,
+        args?: Record<string, any>
+    ) {
+        // console.log(node.type)
+        for (const ext of this.extension[this.phase].get_extensions()) {
+            await ext.before_accept?.(node, this, args)
+        }
+    }
+
+    public async visit(node?: ASTNode, args?: Record<string, any>): Promise<void> {
+        if (node == undefined) return;
+
+        let handledByExtension = false;
+
+        for (const ext of this.extension[this.phase].get_extensions()) {
+            if (ext.handle_node) {
+                const result = await ext.handle_node(node, this, args);
+                if (result === true) {
+                    handledByExtension = true;
+                    break;
+                }
+            }
+        }
+
+        if (!handledByExtension) {
+            try {
+                await node.accept(this, args);
+            } catch (error) {
+                throw error;
+            }
+        }
+    }
+
+    public async after_accept(
+        node: ASTNode,
+        args?: Record<string, any>
+    ) {
+        for (const ext of this.extension[this.phase].get_extensions()) {
+            await ext.after_accept?.(node, this, args)
+        }
+    }
+
+    public get_mod_from_root(name: string) {
+        return this.root.children.find(mod => mod.name == name)
+    }
+
+    public async result(state: string, node: any) {
+        await this.visitScopedIdentifier(
+            new PathNode(null, ["Result", state]),
+            { module: this.root, frame: this.root.frame }
+        );
+
+        const result = this.root.frame.stack.pop();
+
+        if (result) {
+            return new EnumType(state,
+                new TupleType([
+                    node
+                ]),
+                result.members
+            )
+        } else {
+            throw new Error(`Can't find Result enum`)
+        }
+    }
+
+    public async result_ok(js_value: any) {
+        return await this.result("Ok", create_object(js_value))
+    }
+
+    public async result_err(str: string) {
+        return await this.result("Err", new StringType(str))
+    }
+
+    public async execute_function(
+        fn: FunctionDecNode | LambdaNode,
+        args: Type<any>[],
+        frame: Frame,
+        type_params?: Type<any>[]
+    ) {
+        const name = fn instanceof FunctionDecNode ? fn.identifier.name : "lambda";
+
+        if (fn instanceof LambdaNode) {
+        }
+
+        const fn_frame = fn instanceof LambdaNode ? fn.frame : fn.frame.get(this.phase);
+        const fn_module = fn instanceof LambdaNode ? fn.module : fn.module.get(this.phase);
+
+        // parent is captured env
+        const new_frame = new Frame(
+            fn_frame,
+            `fn_${name}`
+        );
+
+        if (fn.params) {
+            fn.params.parameters.forEach((param, i) => {
+                let value = undefined;
+
+                if (param.variadic) {
+                    const rest = [];
+
+                    for (let y = i; y < args.length; y++) {
+                        rest.push(args[y]);
+                    }
+
+                    value = new ArrayType(rest)
+                } else if (i < args.length) {
+                    value = args[i];
+                }
+
+                new_frame.define(param.identifier.name, value)
+            });
+        }
+
+        if (fn.type_parameters && type_params) {
+            fn.type_parameters.forEach((tp, i) => {
+                if (i < type_params.length) {
+                    let value = type_params[i]
+                    new_frame.define(tp.name, value);
+                }
+            })
+        }
+
+        if (fn instanceof FunctionDecNode && fn.inbuilt) {
+            const name = fn.identifier.name;
+            const inbuilt = builtin[name];
+
+            if (inbuilt.type != "function") {
+                this.error(
+                    fn,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    `Object '${name}' is not callable.`,
+                    "You attempted to call something that is not a function or callable object.",
+                    `The object '${name}' was used with '()' but does not support being invoked.`,
+                    ["function", "callable object"],
+                    `Example: let f = () -> {}; f();`
+                );
+            }
+
+            const filtered = inbuilt.filter
+                ? inbuilt.filter(args)
+                : args.map(i => i.getValue());
+
+            if (inbuilt.has_callback) {
+                filtered.unshift(this);
+            }
+
+            let value;
+            if (inbuilt.async) {
+                try {
+                    value = await this.result_ok(await inbuilt.exec(filtered));
+                } catch (e: any) {
+                    if (e instanceof Panic) {
+                        throw e;
+                    }
+                    value = await this.result_err(e.message);
+                }
+            } else {
+                try {
+                    value = await this.result_ok(inbuilt.exec(filtered));
+                } catch (e: any) {
+                    if (e instanceof Panic) {
+                        throw e;
+                    }
+                    value = await this.result_err(e.message);
+                }
+            }
+
+            if (value !== undefined && value !== null)
+                frame.stack.push(value)
+        } else {
+            await this.visit(fn.body, { frame: new_frame, module: fn_module });
+
+            if (!new_frame.return_value && !new_frame.yield_value && new_frame.stack.length > 0) {
+                frame.stack.push(new_frame.stack.pop());
+                return;
+            }
+
+            if (new_frame.return_value)
+                frame.stack.push(new_frame.return_value);
+
+            if (new_frame.yield_value) {
+                frame.stack.push(new_frame.yield_value);
+            }
+        }
+    }
+
+    async run(ext_ignore?: boolean) {
+        if (ext_ignore == undefined) {
+            for (const ext of this.extension[this.phase].get_extensions()) {
+                for (const fn of ext.before_run?.()) {
+                    await fn({
+                        root: this.root,
+                        file: this.file
+                    })
+                }
+            }
+        }
+
+        if (this.ast)
+            await this.visit(this.ast, { frame: this.root.frame, module: this.root });
+
+        return this;
+    }
+
+    async call_main(fun: string = "main", args: Type<any>[] = [], raw?: boolean) {
+        let main = this.root.frame.get(fun);
+
+        if (main) {
+            await this.execute_function(main, args, this.root.frame);
+            let ret = this.root.frame.stack.pop();
+
+            if (raw) return ret;
+
+            let after = [];
+
+            for (const ext of this.extension[this.phase].get_extensions()) {
+                let val = await ext?.after_main?.({
+                    root: this.root
+                });
+
+                if (val) after.push(val);
+            }
+
+            if (ret || after.length > 0) {
+                const value = await ret?.str();
+                return after.length > 0 ? [value, ...after] : value;
+            }
+
+            return null;
+        }
+
+        this.error(
+            null,
+            ErrorCodes.runtime.MISSING_MAIN,
+            "Main function not found.",
+            "Program execution requires a 'main' function as the entry point.",
+            "No symbol named 'main' was found in the root frame.",
+            ["main function"],
+            "Example: fun main() { print('Hello'); }"
+        );
+    }
+
+    async visitProgram(node: ProgramNode, args?: Record<string, any>) {
+        await this.visit(node.program, args);
+    }
+
+    async visitSourceElements(
+        node: SourceElementsNode,
+        args?: Record<string, any>
+    ) {
+        for (const src of node.sources) {
+            await this.visit(src, args);
+        }
+    }
+
+    async visitExpressionStatement(
+        node: ExpressionStatementNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        frame.stack.pop();
+        frame.stack.push(new UnitType());
+    }
+
+    async visitModule(
+        node: ModuleNode,
+        { frame, module, ...rest }: { frame: Frame, module: Module, rest: any[] }
+    ) {
+        const new_module = new Module(node.identifier.name)
+        module.add_submodule(new_module);
+
+        for (const src of node.body) {
+            await this.visit(src, {
+                ...rest,
+                module: new_module,
+                frame: new_module.frame,
+            });
+        }
+    }
+
+    async visitUse(
+        node: UseNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const self = this;
+        function resolveModule(path: string[]): Module | undefined {
+            let mod, start = 1;
+            if (path[0] == "super") {
+                if (module.parent) {
+                    start = 2;
+                    mod = module.parent.children.find(m => m.name === path[1]);
+                }
+            } else
+                mod = self.root.children.find(m => m.name === path[0]);
+
+            if (!mod) {
+                self.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Module '${path[0]}' is not defined.`,
+                    "Tried to access a module that doesn't exist in the root scope.",
+                    `No top-level module named '${path[0]}' was found.`,
+                    ["defined module"]
+                );
+
+                throw new Error("");
+            }
+
+            for (let i = start; i < path.length; i++) {
+                mod = mod.children.find(m => m.name === path[i]);
+                if (!mod) {
+                    self.error(
+                        node,
+                        ErrorCodes.runtime.UNDEFINED_MODULE,
+                        `Module path '${path.slice(0, i + 1).join("::")}' is not defined.`,
+                        "Nested module does not exist in the specified path.",
+                        `Failed at '${path[i]}' in path '${path.join("::")}'.`,
+                        ["existing module path"]
+                    );
+
+                    throw new Error("");
+                }
+            }
+            return mod;
+        }
+
+        if (node.list) {
+            const mod = resolveModule(node.path.path);
+            if (!mod) return;
+
+            node.list.items.forEach(item => {
+                const symbol = mod.frame.get(item.name);
+
+                if (
+                    !symbol ||
+                    symbol instanceof StructNode
+                ) {
+                    mod.children.forEach(m => {
+                        if (m.name == item.name) {
+                            module.add_submodule(m)
+
+                            frame.define(item.alias ?? item.name, symbol);
+                        }
+                    })
+
+                    return;
+                }
+
+                frame.define(item.alias ?? item.name, symbol);
+            });
+        } else {
+            const path = node.path.path;
+            const mod = resolveModule(path.slice(0, -1));
+            if (!mod) return;
+
+            const symbol = mod.frame.get(path[path.length - 1]);
+
+            if (
+                !symbol ||
+                symbol instanceof StructNode
+            ) {
+                mod.children.forEach(m => {
+                    if (m.name == path[path.length - 1]) {
+                        module.add_submodule(m)
+
+                        frame.define(node.alias ?? path[path.length - 1], symbol);
+                    }
+                })
+
+                return;
+            }
+
+            frame.define(node.alias ?? path[path.length - 1], symbol);
+        }
+    }
+
+    async visitLambda(
+        node: LambdaNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(new LambdaType(node, module, frame.clone()));
+    }
+
+    async visitFunctionDec(
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.define(node.identifier.name, node);
+
+        await this.visitFunctionDec_Macro(node, { frame, module });
+
+        if (!node.frame.has(this.phase)) {
+            node.frame.set(this.phase, frame.clone());
+        }
+
+        if (!node.module.has(this.phase)) {
+            node.module.set(this.phase, module);
+        }
+    }
+
+    async visitGeneratorDec(
+        node: GeneratorDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.define(node.identifier.name, node);
+
+        //  await this.visitFunctionDec_Macro(node, { frame, module });
+
+        if (!node.frame.has(this.phase)) {
+            node.frame.set(this.phase, frame.clone());
+        }
+
+        if (!node.module.has(this.phase)) {
+            node.module.set(this.phase, module);
+        }
+    }
+
+    async visitFunctionDec_Macro(
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (!node.attributes || node.attributes.length === 0) {
+            return;
+        }
+
+        for (const attr of node.attributes) {
+            await this.evaluateAttribute(attr, node, { frame, module });
+        }
+    }
+
+    async evaluateAttribute(
+        attr: AttributeNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const metaItem = attr.meta;
+        const name = metaItem.path.name[0];
+
+        switch (name) {
+            case "proc_macro_attribute":
+                await this.proc_macro_attribute(metaItem, node, { frame, module })
+                break;
+            case "proc_macro":
+                await this.proc_macro(metaItem, node, { frame, module })
+                break;
+        }
+    }
+
+    async proc_macro_attribute(
+        metaItem: MetaItemNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (this.phase !== "macro") return;
+
+        if (metaItem.meta) {
+            for (const arg of metaItem.meta) {
+                if (arg.meta && arg.meta.path && arg.meta.path.name.length > 0) {
+                    const name = arg.meta.path.name[0];
+
+                    const path = `${module.get_path()}::${name}`;
+
+                    node.hot.set("pma_path", path);
+
+                    Registry.get_instance().add_macro(path, {
+                        node,
+                        module,
+                        frame
+                    })
+                }
+            }
+        }
+    }
+
+    async proc_macro(
+        metaItem: MetaItemNode,
+        node: FunctionDecNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (this.phase !== "macro") return;
+
+        const path = `${module.get_path()}::${node.identifier.name}`;
+
+        Registry.get_instance().add_macro(path, {
+            node,
+            module,
+            frame
+        })
+    }
+
+    async visitBlock(
+        node: BlockNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const new_frame = new Frame(frame, node.name);
+
+        for (const n of node.body) {
+            if (node.parent instanceof GeneratorDecNode) {
+                node.parent.pc++;
+            }
+
+            await this.visit(n, { frame: new_frame, module });
+
+            if (
+                new_frame.return_flag ||
+                new_frame.yield_flag ||
+                new_frame.break_flag ||
+                new_frame.continue_flag
+            ) {
+                break;
+            }
+        }
+
+
+        if (!new_frame.return_flag && new_frame.stack.length > 0) {
+            const last_value = new_frame.stack[new_frame.stack.length - 1];
+            frame.stack.push(last_value);
+        }
+
+        new_frame.stack = [];
+
+        frame.continue_flag = new_frame.continue_flag;
+        frame.break_flag = new_frame.break_flag;
+        frame.return_flag = new_frame.return_flag;
+        frame.return_value = new_frame.return_value;
+        frame.yield_value = new_frame.yield_value;
+        frame.yield_flag = new_frame.yield_flag;
+    }
+
+    async visitSpreadElement(
+        node: SpreadElementNode,
+        { frame, module }: { frame: Frame; module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        const spread = frame.stack.pop();
+
+        for (const value of spread) {
+            frame.stack.push(value);
+        }
+    }
+
+    async visitCallExpression(
+        node: CallExpressionNode,
+        { frame, module }: { frame: Frame; module: Module }
+    ) {
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        const type_params: Type<any>[] = [];
+
+        if (node.type_params) {
+            for (const tp of node.type_params) {
+                await this.visit(tp, { frame, module })
+                const mod = frame.stack.pop();
+
+                if (!mod) {
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.STACK_UNDERFLOW,
+                        "Stack underflow during argument evaluation.",
+                        "An argument was evaluated, but no result was pushed onto the stack.",
+                        "Stack did not contain expected value after evaluating an argument.",
+                        ["evaluated value"],
+                        "Example: print('{}', 1 + 2)"
+                    );
+                }
+
+                type_params.push(mod);
+            }
+        }
+
+        const evaluatedArgs: Type<any>[] = [];
+
+        for (let arg of node.args) {
+            let spread = false;
+            if (arg instanceof SpreadElementNode) {
+                arg = arg.expression;
+                spread = true
+            }
+
+            await this.visit(arg, { frame, module });
+
+            const argValue = frame.stack.pop();
+            if (!argValue) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.STACK_UNDERFLOW,
+                    "Stack underflow during argument evaluation.",
+                    "An argument was evaluated, but no result was pushed onto the stack.",
+                    "Stack did not contain expected value after evaluating an argument.",
+                    ["evaluated value"],
+                    "Example: print('{}', 1 + 2)"
+                );
+            }
+
+            if (spread) {
+                for (const val of argValue) {
+                    evaluatedArgs.push(val);
+                }
+            } else {
+                evaluatedArgs.push(argValue);
+            }
+
+        }
+
+        if (node.callee instanceof PathNode) {
+            await this.visit(node.callee, { frame, module });
+            const nd = frame.stack.pop();
+
+            if (!nd) {
+                this.error(
+                    node.callee,
+                    ErrorCodes.runtime.UNDEFINED_FUNCTION,
+                    `Function '${node.callee.name.join('.')}' is not defined.`,
+                    "The function you're trying to call has not been declared or imported.",
+                    `Function '${node.callee.name.join('.')}' not found in scope.`,
+                    ["defined function", "imported symbol"],
+                    `Example: fun greet() { ... } \ngreet();`
+                );
+            }
+
+            if (
+                nd instanceof FunctionType ||
+                nd instanceof LambdaType
+            ) {
+                if (nd instanceof LambdaType) {
+                    const fun_lam = nd.getValue();
+                    fun_lam.module = nd.module;
+                    fun_lam.frame = nd.env;
+                }
+
+                await this.execute_function(nd.getValue(), evaluatedArgs, frame, type_params);
+            } else if (nd instanceof TaggedNode) {
+                const _enum = new EnumType(nd.name, new TupleType(evaluatedArgs), nd.members);
+                frame.stack.push(_enum);
+            } else if (nd instanceof GeneratorType) {
+                frame.stack.push(await nd.iter(env));
+            } else {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    `Object '${node.callee.name.join('.')}' is not callable.`,
+                    "You tried to call a value that isn't a function or lambda.",
+                    "The symbol exists but cannot be invoked with '()'.",
+                    ["function", "lambda"],
+                    "Example: let f = (): number -> 1; f();"
+                );
+            }
+
+        } else {
+            await this.visit(node.callee, { frame, module, args: evaluatedArgs });
+            const fn = frame.stack.pop();
+
+            if (!(
+                fn instanceof FunctionType ||
+                fn instanceof LambdaType ||
+                fn instanceof MemberType
+            )) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.NOT_CALLABLE,
+                    "Attempted to call a non-function value.",
+                    "Only functions or lambda expressions can be called with '()'.",
+                    `Type '${fn?.constructor?.name ?? "unknown"}' is not callable.`,
+                    ["function", "lambda"],
+                    "Example: fun (x): number -> x * 2"
+                );
+            }
+
+            if (fn instanceof LambdaType) {
+                const fun_lam = fn.getValue();
+                fun_lam.module = fn.module;
+                fun_lam.frame = fn.env;
+            }
+
+            await this.execute_function(fn.getValue(), evaluatedArgs, frame, type_params);
+        }
+    }
+
+    async get_object(
+        node: MemberExpressionNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.object, { frame, module });
+        const object = frame.stack.pop() as Type<any>;
+
+        let propertyValue: Type<any>;
+        if (node.computed) {
+            await this.visit(node.property, { frame, module });
+            propertyValue = frame.stack.pop() as Type<any>;
+        } else {
+            let name = (node.property as IdentifierNode).name;
+            propertyValue = new StringType(name);
+        }
+
+        return {
+            object,
+            property: propertyValue
+        }
+    }
+
+    async visitMemberExpression(
+        node: MemberExpressionNode,
+        { frame, module, args }: { frame: Frame, module: Module, args: Type<any>[] }
+    ) {
+        const { object, property } = await this.get_object(node, { frame, module });
+
+        const value = await object.get({
+            engine: this,
+            frame,
+            module
+        }, property, args);
+
+        if (!value) {
+            this.error(
+                node,
+                ErrorCodes.runtime.UNDEFINED_PROPERTY,
+                `Property '${property}' not found on object.`,
+                "You're trying to access a property or method that doesn't exist on this object.",
+                `The property '${property}' is not defined on the target object.`,
+                ["valid property", "defined method"],
+                `obj.prop or obj.method()`
+            );
+        }
+
+        frame.stack.push(value);
+    }
+
+    async visitVariableList(
+        node: VariableStatementNode,
+        args?: Record<string, any>
+    ) {
+        await this.visit(node.variables, args);
+    }
+
+    async visitVariable(
+        node: VariableNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let value: Type<any> | null = null;
+
+        if (node.expression) {
+            await this.visit(node.expression, { frame, module });
+            value = frame.stack.pop() as Type<any>;
+        }
+
+        frame.define(node.identifier.name, value);
+    }
+
+    async visitIfElse(
+        node: IfElseNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.condition, { frame, module });
+        const condition = frame.stack.pop() as Type<any>;
+
+
+        if (condition.getValue()) {
+            await this.visit(node.consequent, { frame, module });
+        } else {
+            await this.visit(node.alternate, { frame, module });
+        }
+    }
+
+    async visitAssignmentExpression(
+        node: BinaryOpNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let left, object = null, property = null;
+
+        if (node.left instanceof MemberExpressionNode) {
+            const o = await this.get_object(node.left, { frame, module });
+
+            object = o.object;
+            property = o.property;
+
+            left = await object.get({
+                engine: this,
+                frame,
+                module
+            }, property, []);
+
+            if (!left) {
+                this.error(
+                    node.left,
+                    ErrorCodes.runtime.UNDEFINED_PROPERTY,
+                    `Property '${property}' not found on object.`,
+                    "Cannot assign to an undefined property.",
+                    `Object has no property named '${property}'.`,
+                    ["defined property"],
+                    "obj.field = 42"
+                );
+            }
+        } else {
+            const ignore_null_left = node.operator == "=";
+
+            left = await this.getScopedSymbol(node.left as PathNode, { frame, ignore_null_left, module });
+            if (!left && !ignore_null_left) {
+                this.error(
+                    node.left,
+                    ErrorCodes.runtime.UNDEFINED_VARIABLE,
+                    "Cannot assign to undefined variable.",
+                    "The left-hand side of the assignment is not a declared variable.",
+                    `Variable '${(node.left as PathNode).name.join('.')}' not found.`,
+                    ["declared variable"],
+                    "valid: let x = 1; x = 2; invalid: let x = 1; y = 2; y is an undefined variable."
+                );
+            }
+        }
+
+        await this.visit(node.right, { frame, module });
+        const right = frame.stack.pop();
+        if (!right) {
+            this.error(
+                node.right,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow during assignment.",
+                "The right-hand side of the assignment did not produce a value.",
+                "Missing value for assignment.",
+                ["evaluated expression"],
+                "valid: x = 1 + 2"
+            );
+        }
+
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        let result: Type<any>;
+        try {
+            switch (node.operator) {
+                case "+=":
+                    result = await left.add(env, right);
+                    break;
+                case "-=":
+                    result = await left.minus(env, right);
+                    break;
+                case "*=":
+                    result = await left.multiply(env, right);
+                    break;
+                case "/=":
+                    result = await left.divide(env, right);
+                    break;
+                case "%=":
+                    result = await left.modulo(env, right);
+                    break;
+                case "=":
+                    result = right;
+                    break;
+                default:
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                        `Unsupported operator '${node.operator}' in assignment.`,
+                        "This assignment operator is not recognized or allowed.",
+                        `Operator '${node.operator}' is invalid in this context.`,
+                        ["=", "+=", "-=", "*=", "/=", "%="],
+                        "x += 1"
+                    );
+            }
+        } catch (e: any) {
+            this.error(
+                node,
+                ErrorCodes.runtime.OPERATION_FAILED,
+                `Operation failed during '${node.operator}' assignment.`,
+                e.message,
+                "A runtime error occurred while computing the new value.",
+                ["valid operands"],
+                "x += 1"
+            );
+        }
+
+        if (object && property) {
+            await object.set(env, property, result);
+        } else {
+            if (node.left instanceof PathNode)
+                this.setScopedSymbol(
+                    node.left,
+                    result,
+                    { frame, module }
+                );
+            else
+                this.error(
+                    node,
+                    "ASSIGNMENT_ERROR",
+                    ""
+                )
+        }
+
+        frame.stack.push(result);
+    }
+
+    async visitRangeExpression(
+        node: RangeNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let start: any = null;
+        let end: any = null;
+
+        if (node.start) {
+            await this.visit(node.start, { frame, module });
+            start = frame.stack.pop();
+        } else {
+            start = new NumberType(0);
+        }
+
+        if (node.end) {
+            await this.visit(node.end, { frame, module });
+            end = frame.stack.pop();
+        } else {
+            end = new NumberType(Infinity);
+        }
+
+        if (start instanceof NumberType && end instanceof NumberType) {
+            const range = new RangeType(start, end, node.is_inclusive);
+            frame.stack.push(range);
+        }
+    }
+
+    async visitUnaryOp(
+        node: UnaryOpNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.operand, { frame, module });
+        const operand = frame.stack.pop() as Type<Boolean>;
+
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        let result: Type<any>;
+        switch (node.operator) {
+            case "!":
+                result = await operand.not(env);
+                break;
+            case "mut":
+                result = operand;
+                break;
+            case "&":
+                result = operand;
+                break;
+            default:
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                    `Unsupported operator '${node.operator}' in unary expression.`,
+                    "This unary operator is not recognized or allowed.",
+                    `Operator '${node.operator}' is invalid in this context.`,
+                    ["!", "mut", "&"],
+                    "!x"
+                );
+        }
+
+        frame.stack.push(result);
+    }
+
+    async visitBinaryOp(
+        node: BinaryOpNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.left, { frame, module });
+        const left = frame.stack.pop();
+        if (!left) {
+            this.error(
+                node.left,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow while evaluating left operand.",
+                "The left-hand side expression did not leave a value on the stack.",
+                "Likely due to a missing or failed evaluation of the left operand.",
+                ["evaluated expression"],
+                "x + 5"
+            );
+        }
+
+        await this.visit(node.right, { frame, module });
+        const right = frame.stack.pop();
+        if (!right) {
+            this.error(
+                node.right,
+                ErrorCodes.runtime.STACK_UNDERFLOW,
+                "Stack underflow while evaluating right operand.",
+                "The right-hand side expression did not leave a value on the stack.",
+                "Likely due to a missing or failed evaluation of the right operand.",
+                ["evaluated expression"],
+                "x + 5"
+            );
+        }
+
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        let result: Type<any>;
+        switch (node.operator) {
+            case "+":
+                result = await left.add(env, right);
+                break;
+            case "-":
+                result = await left.minus(env, right);
+                break;
+            case "*":
+                result = await left.multiply(env, right);
+                break;
+            case "/":
+                result = await left.divide(env, right);
+                break;
+            case "%":
+                result = await left.modulo(env, right);
+                break;
+            case "<":
+                result = await left.lt(env, right);
+                break;
+            case "<=":
+                result = await left.lte(env, right);
+                break;
+            case ">":
+                result = await left.gt(env, right);
+                break;
+            case ">=":
+                result = await left.gte(env, right);
+                break;
+            case "==":
+                result = await left.eq(env, right);
+                break;
+            case "!=":
+                result = await left.neq(env, right);
+                break;
+            case "&&":
+                result = await left.and(env, right);
+                break;
+            case "||":
+                result = await left.or(env, right);
+                break;
+            default:
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNSUPPORTED_OPERATOR,
+                    `Unsupported operator '${node.operator}' in assignment.`,
+                    "This assignment operator is not recognized or allowed.",
+                    `Operator '${node.operator}' is invalid in this context.`,
+                    ["+", "-", "*", "/", "%", "<", ">", "==", "!=", "&&", "||"],
+                    "let a = x + 1;"
+                );
+        }
+
+        frame.stack.push(result);
+    }
+
+    setScopedSymbol(
+        node: PathNode,
+        value: Type<any>,
+        { frame, module }: { frame: Frame; module: Module }
+    ) {
+        const __p = (search_frame: Frame, name: string, value: Type<any>) => {
+            search_frame.assign(name, value);
+        };
+
+        let current: Module | undefined;
+
+        if (node.name.length === 1) {
+            return __p(frame, node.name[0], value);
+        }
+    }
+
+    async getScopedSymbol(
+        node: PathNode,
+        { frame, ignore_null_left, module }: { frame: Frame; ignore_null_left?: boolean; module: Module }
+    ) {
+        const __p = (search_frame: Frame, name: string) => {
+            const symbol = search_frame.get(name);
+
+            if (!symbol && !ignore_null_left) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_SYMBOL,
+                    `Symbol '${name}' is not defined.`,
+                    "You may have a typo or used a symbol before declaring it.",
+                    `Symbol '${name}' was not found in the current scope.`,
+                    ["defined variable or function"],
+                    `Valid: let ${name} = 42; let a = ${name} + 10; invalid: let sum = w + 10; Symbol 'w' is not defined.`
+                );
+            }
+
+            return symbol;
+        };
+
+        let current: Module | undefined;
+
+        if (node.name.length === 1) {
+            return __p(frame, node.name[0]);
+        }
+
+        const rootToken = node.name[0];
+        if (rootToken === "root") {
+            current = this.root;
+        } else if (rootToken === "self") {
+            current = module;
+        } else if (rootToken === "super") {
+            if (!module.parent) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.INVALID_SUPER_REFERENCE,
+                    "Cannot use 'super' at the root module.",
+                    "'super' refers to a parent module, which doesn't exist at the root level.",
+                    "Tried to access parent of the root module.",
+                    ["self", "root", "or specific module name"],
+                    "'use super::graphics;' in a submodule"
+                );
+            }
+            current = module.parent;
+        } else {
+            current = module.children.find(m => m.name === rootToken);
+
+            if (!current) {
+                const val_mod = frame.get(rootToken);
+
+                if (val_mod instanceof ModuleType) {
+                    current = val_mod.getValue();
+                } else {
+                    // try searching from the root again
+                    current = this.root.children.find(m => m.name === rootToken);
+
+                    if (!current) {
+                        this.error(
+                            node,
+                            ErrorCodes.runtime.UNDEFINED_MODULE,
+                            `Undefined module: '${rootToken}'`,
+                            `The module '${rootToken}' does not exist.`,
+                            `Available modules: ${module.children.map(m => `'${m.name}'`).join(", ") || "none"}`,
+                            ["existing module name"]
+                        );
+                    }
+                }
+            }
+        }
+
+        for (let i = 1; i < node.name.length - 1; i++) {
+            const next = node.name[i];
+            if (current) {
+                current = current.children.find(m => m.name === next);
+            }
+
+            if (!current) {
+                this.error(
+                    node,
+                    ErrorCodes.runtime.UNDEFINED_MODULE,
+                    `Undefined submodule: '${next}'`,
+                    `The submodule '${next}' does not exist in '${node.name[i - 1]}'.`,
+                    "Tried to traverse a non-existent submodule path.",
+                    ["existing submodule"],
+                    "use graphics::shapes::Circle;"
+                );
+            }
+        }
+
+        if (current?.frame) {
+            return __p(current.frame, node.name[node.name.length - 1]);
+        }
+
+        this.error(
+            node,
+            ErrorCodes.runtime.UNDEFINED_SYMBOL,
+            `Symbol '${node.name[node.name.length - 1]}' is not defined in the target module.`,
+            "The symbol you tried to access does not exist or is not visible in this module.",
+            "Final symbol lookup failed.",
+            ["existing symbol"]
+        );
+    }
+
+    async visitScopedIdentifier(
+        node: PathNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const symbol = await this.getScopedSymbol(node, { frame, module });
+        if (symbol instanceof Type) {
+            frame.stack.push(symbol);
+        } else if (symbol instanceof StructNode) {
+            frame.stack.push(symbol);
+        } else if (symbol instanceof TaggedNode) {
+            if (symbol.body instanceof NumberNode) {
+                await this.visit(symbol.body, { frame, module });
+                frame.stack.push(new EnumType(symbol.name, frame.stack.pop(), symbol.members))
+                return;
+            } else if (symbol.body instanceof StructNode) {
+                frame.stack.push(symbol.body)
+                return;
+            }
+            frame.stack.push(symbol);
+        } else if (symbol instanceof FunctionDecNode) {
+            frame.stack.push(new FunctionType(symbol));
+        } else if (symbol instanceof GeneratorDecNode) {
+            frame.stack.push(new GeneratorType(symbol));
+        } else {
+            throw new Error(`Unknown object in engine: ${symbol}`)
+        }
+    }
+
+    async visitType(
+        node: TypeNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const ch = module.children.find(mod => mod.name == node.name);
+
+        if (ch)
+            frame.stack.push(new ModuleType(ch))
+    }
+
+    async visitIdentifier(
+        node: IdentifierNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const symbol = frame.get(node.name);
+
+        if (!symbol) {
+            const mod = module.children.find(n => n.name == node.name);
+            if (mod) {
+                frame.stack.push(mod);
+            }
+        } else {
+            frame.stack.push(symbol);
+        }
+    }
+
+    async visitFor(
+        node: ForNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        throw new Error("Engine doesn't support for loops");
+    }
+
+    async visitWhile(
+        node: WhileNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        let condition = frame.stack.pop() as Type<any>;
+
+        while (condition.getValue()) {
+            await this.visit(node.body, { frame, module, name: "while" });
+            await this.visit(node.expression, { frame, module });
+
+            if (frame.break_flag) {
+                frame.break_flag = false;
+                break;
+            }
+
+            if (frame.continue_flag) {
+                frame.continue_flag = false;
+                await this.visit(node.expression, { frame, module });
+                condition = frame.stack.pop() as Type<any>;
+                continue;
+            }
+
+            if (frame.return_flag) {
+                break;
+            }
+
+            condition = frame.stack.pop() as Type<any>;
+        }
+    }
+
+    async visitYield(
+        node: YieldNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+
+        frame.yield_value = frame.stack.pop() as Type<any>;
+        frame.yield_flag = true;
+    }
+
+    async visitReturn(
+        node: ReturnNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        if (node.expression) {
+            await this.visit(node.expression, { frame, module });
+            frame.return_value = frame.stack.pop() as Type<any>;
+        }
+
+        frame.return_flag = true;
+    }
+
+    async visitBreak(
+        node: ASTNode,
+        { frame }: { frame: Frame }
+    ) {
+        frame.break_flag = true;
+    }
+
+    async visitContinue(node: ASTNode, { frame }: { frame: Frame }) {
+        frame.continue_flag = true;
+    }
+
+    async visitEnum(
+        node: EnumNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const newModule = new EnumModule(node.name);
+        const newFrame = newModule.frame;
+        module.add_submodule(newModule);
+
+        let enum_counter = 0;
+
+        for (const src of node.body) {
+            await this.visit(src, { frame: newFrame, enum_counter });
+
+            if (!src.value)
+                enum_counter++
+        }
+    }
+
+    async visitEnumVariant(
+        node: EnumVariantNode,
+        { frame, module, enum_counter }: { frame: Frame, module: Module, enum_counter: number }
+    ) {
+        let variant = node.value ?? new NumberNode(null, enum_counter);
+        frame.define(node.name, new TaggedNode(null, node.name, variant));
+    }
+
+    async visitTrait(
+        node: TraitNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.define(node.identifier.name, node);
+    }
+
+    async visitImpl(
+        node: ImplNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        // filter out trait impls. They don't exist in a clean ImplNode state
+        node.body = node.body.filter((item) => !item.is_trait);
+
+        let trait = undefined;
+        if (node.trait) {
+            await this.visit(node.trait, { frame, module });
+            trait = frame.stack.pop() as TraitNode;
+        }
+
+        await this.visit(node.iden, { frame, module });
+        const obj = frame.stack.pop();
+
+        if (trait) {
+            await this.visitImplTrait(node, trait, obj, { frame, module });
+        }
+
+        if (obj instanceof StructNode) {
+            await this.visitImplStruct(node, obj, { frame, module });
+        } else if (obj instanceof EnumModule) {
+            await this.visitImplEnum(node, obj, { frame, module });
+        }
+    }
+
+    async visitImplTrait(
+        impl_node: ImplNode,
+        trait_node: TraitNode,
+        obj: StructNode | EnumModule,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const requiredMethods = trait_node.body.filter((item): item is TraitSigNode => item instanceof TraitSigNode);
+        const implementedMethods = impl_node.body.filter(
+            (item): item is FunctionDecNode => item instanceof FunctionDecNode
+        );
+
+        const missingMethods: string[] = [];
+        const implementedMethodNames = new Set(
+            implementedMethods.map(method => method.identifier.name)
+        );
+
+        for (const requiredMethod of requiredMethods) {
+            const methodName = requiredMethod.identifier.name;
+
+            if (!implementedMethodNames.has(methodName)) {
+                missingMethods.push(methodName);
+            } else {
+                // Validate method signature matches trait requirement
+                const implementation = implementedMethods.find(
+                    m => m.identifier.name === methodName
+                );
+            }
+        }
+
+        if (missingMethods.length > 0) {
+            this.error(
+                impl_node,
+                "MISSING_TRAIT_METHODS",
+                `Missing implementation for trait methods: ${missingMethods.join(', ')}`
+            );
+        }
+
+        const defaultMethods = trait_node.body.filter((item) =>
+            item instanceof FunctionDecNode ||
+            item instanceof MemberDecNode
+        );
+
+        impl_node.body.push(...defaultMethods);
+    }
+
+    async visitImplStruct(
+        impl_node: ImplNode,
+        struct_node: StructNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const struct_mod = struct_node.module.get(this.phase);
+
+        if (!struct_mod) {
+            this.error(
+                struct_node,
+                "UNDEFINED_STRUCT",
+                `Module for struct '${struct_node.name}' not found`
+            )
+        }
+
+        // Get existing member names for duplicate checking
+        const existingNames = new Set<string>();
+        struct_node.body.forEach(member => {
+            if (member instanceof FieldNode) {
+                existingNames.add(member.field.name);
+            } else if (member instanceof FunctionDecNode) {
+                existingNames.add(member.identifier.name);
+            }
+        });
+
+        // Process each implementation member
+        for (const src of impl_node.body) {
+            const memberName = src.identifier.name;
+
+            // Check for duplicates
+            if (existingNames.has(memberName)) {
+                this.error(
+                    src,
+                    "DUPLICATE_MEMBER",
+                    `Member '${memberName}' already exists in struct '${struct_node.name}'`
+                );
+            }
+
+            // Set up the member's context
+            if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
+                src.frame.set(this.phase, struct_mod.frame);
+                src.module.set(this.phase, struct_mod);
+                struct_mod.frame.define(src.identifier.name, src);
+            } else if (src instanceof MemberDecNode) {
+                src.frame.set(this.phase, struct_mod.frame);
+                src.module.set(this.phase, module);
+
+                // only add the member to the struct body if it's not a duplicate
+                struct_node.body.push(src);
+            }
+
+            existingNames.add(memberName);
+        }
+    }
+
+    async visitImplEnum(
+        impl_node: ImplNode,
+        enum_mod: EnumModule,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        // Handle member additions to enum variants
+        for (let [key, value] of enum_mod.frame.symbol_table.entries()) {
+            if (value instanceof TaggedNode) {
+                const existingMemberNames = new Set(
+                    value.members.map(m => m.identifier.name)
+                );
+
+                for (const src of impl_node.body) {
+                    if (src instanceof MemberDecNode) {
+                        const memberName = src.identifier.name;
+
+                        if (existingMemberNames.has(memberName)) {
+                            this.error(
+                                src,
+                                "DUPLICATE_MEMBER",
+                                `Member '${memberName}' already exists in enum variant '${value.name}'`
+                            );
+                        }
+
+                        src.frame.set(this.phase, frame);
+                        src.module.set(this.phase, module);
+                        value.members.push(src);
+                        existingMemberNames.add(memberName);
+                    }
+                }
+            }
+        }
+
+        // Handle method additions to enum
+        const existingMethodNames = new Set<string>();
+        enum_mod.frame.symbol_table.forEach((value, key) => {
+            if (value instanceof FunctionDecNode) {
+                existingMethodNames.add(key);
+            }
+        });
+
+        for (const src of impl_node.body) {
+            if (src instanceof FunctionDecNode && !(src instanceof MemberDecNode)) {
+                const methodName = src.identifier.name;
+
+                if (existingMethodNames.has(methodName)) {
+                    this.error(
+                        src,
+                        "DUPLICATE_METHOD",
+                        `Method '${methodName}' already exists in enum`
+                    );
+                }
+
+                src.frame.set(this.phase, frame);
+                src.module.set(this.phase, module);
+                enum_mod.frame.define(src.identifier.name, src);
+                existingMethodNames.add(methodName);
+            }
+        }
+    }
+
+    async visitStruct(
+        node: StructNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const newModule = new StructModule(node.name, frame);
+        node.module.set(this.phase, newModule);
+
+        // body could have been mutated by other passes. clean it
+        node.body = node.body.filter((m) => m instanceof FieldNode);
+
+        frame.define(node.name, node);
+
+        module.add_submodule(newModule);
+    }
+
+    async visitAlreadyInit(
+        node: AlreadyInitNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(node.lugha_type);
+    }
+
+    async visitStructInit(
+        node: StructInitNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.name, { frame, module });
+
+        const struct = frame.stack.pop() as StructNode;
+
+        const providedFields: Record<string, any> = {};
+
+        for (const { iden, expression } of node.fields) {
+            await this.visit(expression ?? iden, { frame, module });
+            providedFields[iden.name] = frame.stack.pop();
+        }
+
+        const instance: Record<string, any> = {};
+
+        for (const member of struct.body) {
+            if (member instanceof FieldNode) {
+                const fieldName = member.field.name;
+
+                if (!(fieldName in providedFields)) {
+                    this.error(
+                        node,
+                        ErrorCodes.runtime.MISSING_STRUCT_FIELD,
+                        `Missing field '${fieldName}' in struct initialization.`,
+                        "All required fields of a struct must be provided during initialization.",
+                        `The field '${fieldName}' is declared in the struct but wasn't provided.`,
+                        [`field '${fieldName}'`],
+                        `${struct.name} { ${fieldName}: value }`
+                    );
+                }
+
+                instance[fieldName] = providedFields[fieldName];
+            } else if (member instanceof MemberDecNode) {
+                const methodName = member.identifier.name;
+                instance[methodName] = new MemberType(member);
+            }
+        }
+
+        frame.stack.push(new StructType(instance, struct.name));
+    }
+
+    async visitMatch(
+        node: MatchNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        await this.visit(node.expression, { frame, module });
+        const value = frame.stack.pop() as Type<any>;
+
+        for (const arm of node.arms) {
+            const new_frame = new Frame(frame);
+
+            const matches = await this.matchPattern(arm.pattern, value, { frame: new_frame, module });
+
+            if (!matches) continue;
+
+            await this.visit(arm.exp_block, { frame: new_frame, module });
+
+            frame.continue_flag = new_frame.continue_flag;
+            frame.break_flag = new_frame.break_flag;
+            frame.return_flag = new_frame.return_flag;
+            frame.return_value = new_frame.return_value;
+
+            if (new_frame.return_value) {
+                frame.stack.push(new_frame.return_value);
+            } else {
+                const ret = new_frame.stack.pop();
+
+                if (ret)
+                    frame.stack.push(ret);
+            }
+
+            return;
+        }
+    }
+
+    private async matchPattern(
+        pattern: ASTNode,
+        value: Type<any>,
+        { frame, module }: { frame: Frame, module: Module }
+    ): Promise<boolean> {
+        let env = {
+            engine: this,
+            frame,
+            module
+        };
+
+        if (
+            pattern instanceof NumberNode ||
+            pattern instanceof StringNode
+        ) {
+            await this.visit(pattern, { frame, module });
+            const res = frame.stack.pop() as Type<any>;
+
+            return (await res.eq(env, value)).getValue();
+        }
+
+        if (
+            pattern instanceof IdentifierNode
+        ) {
+            // SHOULD CHECK IF IT'S IN SCOPE
+            frame.define(pattern.name, value);
+            return true;
+        }
+
+        if (
+            pattern instanceof PathNode &&
+            pattern.name.length === 1
+        ) {
+            frame.define(pattern.name[0], value);
+            return true;
+        }
+
+        if (pattern instanceof TuplePatternNode) {
+            if (!(value instanceof TupleType)) {
+                return false;
+            }
+
+            if (pattern.patterns.length != value.value.length) {
+                return false;
+            }
+
+            for (let i = 0; i < pattern.patterns.length; i++) {
+                const p = pattern.patterns[i];
+                const v = value.value[i];
+
+                if (!(await this.matchPattern(p, v, { frame, module }))) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (pattern instanceof EnumPatternNode) {
+            if (!(value instanceof EnumType)) {
+                return false;
+            }
+
+            await this.visit(pattern.path, { frame, module });
+            const res = frame.stack.pop();
+
+            if (res instanceof EnumType && value instanceof EnumType) {
+                return res.tag == value.tag;
+            }
+
+            if (value instanceof EnumType && res instanceof TaggedNode) {
+                if (value.tag != res.name) {
+                    return false;
+                }
+
+                if (pattern.patterns) {
+                    for (let i = 0; i < pattern.patterns.length; i++) {
+                        const p = pattern.patterns[i];
+                        const v = await value.getValue().get({
+                            engine: this,
+                            frame,
+                            module
+                        }, new NumberType(i), []);
+
+                        if (!(await this.matchPattern(p, v, { frame, module }))) {
+                            return false;
+                        }
+                    }
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        if (pattern instanceof FieldPatternNode) {
+            const subPattern = pattern.patterns ?? pattern.iden;
+            return await this.matchPattern(subPattern, value, { frame, module });
+        }
+
+        if (pattern instanceof StructPatternNode) {
+            if (!(value instanceof StructType)) {
+                return false;
+            }
+
+            await this.visit(pattern.path, { frame, module });
+            const struct = frame.stack.pop();
+
+            if (!(struct instanceof StructNode)) {
+                return false;
+            }
+
+            if (struct.name !== value.name) {
+                return false;
+            }
+
+            for (const field of pattern.patterns) {
+                if (!(await this.matchPattern(field, value.value[field.iden.name], { frame, module }))) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (pattern instanceof WildcardNode) {
+            return true;
+        }
+
+        return false;
+    }
+
+    async visitTagged(
+        node: TaggedNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        let _enum;
+
+        if (node.body instanceof TupleVariantNode) {
+            const a = [];
+            for (const src of node.body.types) {
+
+                if (src instanceof FunctionDecNode) {
+                    a.push(new FunctionType(src));
+                } else {
+                    await this.visit(src, { frame, module });
+                    a.push(frame.stack.pop() as Type<any>);
+                }
+            }
+
+            _enum = new EnumType(node.name, new TupleType(a), node.members);
+        } else if (node.body instanceof NumberNode) {
+            await this.visit(node.body, { frame, module });
+            _enum = new EnumType(node.name, frame.stack.pop(), node.members);
+        }
+
+        frame.stack.push(_enum);
+    }
+
+    async visitMap(
+        node: MapNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const objectProperties: Record<string, Type<any>> = {};
+
+        for (const propNode of node.properties) {
+            let value: Type<any>;
+
+            if (propNode.value == undefined && propNode.key.type == "string") {
+                await this.visit(new IdentifierNode(null, propNode.key.value), { frame, module });
+                value = frame.stack.pop() as Type<any>;
+            } else {
+                await this.visit(propNode.value, { frame, module });
+                value = frame.stack.pop() as Type<any>;
+            }
+
+            let key: string | undefined = undefined;
+
+            if (propNode.key.type == "string") {
+                key = propNode.key.value;
+            } else {
+                await this.visit(propNode.key.value, { frame, module });
+                let skey = frame.stack.pop();
+
+                if (skey instanceof StringType) {
+                    key = skey.getValue();
+                } else {
+                    throw new Error("Invalid map key");
+                }
+            }
+
+            if (key == undefined) {
+                throw new Error("Invalid map key");
+            }
+
+            objectProperties[key] = value;
+        }
+
+        frame.stack.push(new MapType(objectProperties));
+    }
+
+    async visitSet(
+        node: SetNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const values = [];
+
+        for (const src of node.values) {
+            await this.visit(src, { frame, module });
+            const value = frame.stack.pop() as Type<any>;
+            values.push(value);
+        }
+
+        frame.stack.push(new SetType(values));
+    }
+
+    async visitArray(
+        node: ArrayNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const values = [];
+
+        for (const src of node.elements) {
+            await this.visit(src, { frame, module });
+            const value = frame.stack.pop() as Type<any>;
+            values.push(value);
+        }
+
+        frame.stack.push(new ArrayType(values));
+    }
+
+    async visitTuple(
+        node: TupleNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        const values = [];
+
+        for (const src of node.values) {
+            await this.visit(src, { frame, module });
+            const value = frame.stack.pop() as Type<any>;
+            values.push(value);
+        }
+
+        frame.stack.push(new TupleType(values));
+    }
+
+    async visitNumber(
+        node: NumberNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(new NumberType(node.value));
+    }
+
+    async visitString(
+        node: StringNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(new StringType(node.value));
+    }
+
+    async visitBoolean(
+        node: BooleanNode,
+        { frame, module }: { frame: Frame, module: Module }
+    ) {
+        frame.stack.push(new BoolType(node.value));
+    }
+}
+
+/*
+GRAVEYARD GRAVEYARD GRAVEYARD GRAVEYARD
+GRAVEYARD GRAVEYARD GRAVEYARD GRAVEYARD
+GRAVEYARD GRAVEYARD GRAVEYARD GRAVEYARD
+GRAVEYARD GRAVEYARD GRAVEYARD GRAVEYARD
+
+await this.visit(node.expression, { frame, module });
+let expression = frame.stack.pop() as Type<any>;
+let env = {
+    engine: this,
+    frame,
+    module
+};
+
+while (!((await expression.iter(env)).done)) {
+    const new_frame = new Frame(frame);
+
+    new_frame.define(node.variable.name, expression.value[0]);
+
+    await this.visit(node.body, {
+        frame: new_frame,
+        module,
+        name: "for"
+    });
+}
+
+for (const value of (await expression.iter(env))) {
+    const new_frame = new Frame(frame);
+
+    new_frame.define(node.variable.name, value);
+
+    await this.visit(node.body, {
+        frame: new_frame,
+        module,
+        name: "for"
+    });
+
+    if (new_frame.break_flag) {
+        frame.break_flag = false;
+        break;
+    }
+
+    if (new_frame.continue_flag) {
+        frame.break_flag = false;
+        break;
+    }
+
+    if (new_frame.return_flag) {
+        frame.return_flag = new_frame.return_flag;
+        frame.return_value = new_frame.return_value
+        break;
+    }
+}
+
+*/

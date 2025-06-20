@@ -205,9 +205,9 @@ array_literal ::= "[" (expression ("," expression)*)? "]"
 
 tuple_literal ::= "(" expression "," (expression ",")* ")"
 
-set_literal ::= "set" "{" expression ("," expression)* "}"
+set_literal ::= "Set" "{" expression ("," expression)* "}"
 
-map_literal ::= "map" "{" (map_entry ("," map_entry)*)? "}"
+map_literal ::= "Map" "{" (map_entry ("," map_entry)*)? "}"
 
 map_entry ::= expression ":" expression
 

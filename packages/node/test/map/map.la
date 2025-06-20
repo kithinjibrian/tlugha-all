@@ -1,0 +1,3 @@
+let a = Map { a: 2 };
+a.set("b", 3);
+a.get("b");

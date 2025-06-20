@@ -1,5 +1,6 @@
 import {
     ASTNode,
+    ExtensionStore,
     id
 } from "@kithinji/tlugha-core";
 
@@ -8,15 +9,13 @@ import {
 } from "@kithinji/tlugha-core";
 
 import {
-    builtin,
     lugha,
-    pipe_borrowcheck,
-    pipe_engine,
-    pipe_expandmacro,
+    pipe_desugar,
+    pipe_desugartc,
     pipe_lp,
-    pipe_procmacro,
     pipe_read,
-    pipe_typecheck
+    pipe_tc,
+    pipe_xmachina,
 } from "./types"
 
 import * as path from 'path';
@@ -52,11 +51,14 @@ export async function exec({
             pipeline: [
                 pipe_read,
                 pipe_lp,
-                pipe_procmacro,
-                pipe_expandmacro,
-                //  pipe_borrowcheck,
-                // pipe_typecheck,
-                pipe_engine
+                pipe_tc,
+                // pipe_procmacro,
+                // pipe_expandmacro,
+                //pipe_desugar,
+                // pipe_borrowcheck,
+                //pipe_typecheck,
+                //pipe_desugartc,
+                //pipe_xmachina
             ],
             wd: a.dir,
             rd: a.dir,
@@ -68,8 +70,10 @@ export async function exec({
             "call_main" in config &&
             config.call_main
         ) {
-            if (engine)
+            if (engine) {
+                let main = config.main_name ?? "main";
                 return await engine.call_main();
+            }
         }
         else
             return null;
@@ -82,5 +86,21 @@ export async function exec({
 
         Cache.get_instance().clear_cache()
         Cache.get_instance("macro").clear_cache()
+
+        ExtensionStore.clear();
     }
 }
+
+/*
+           pipe_read,
+                pipe_lp,
+                // pipe_procmacro,
+                // pipe_expandmacro,
+                pipe_desugar,
+                // pipe_borrowcheck,
+                //pipe_typecheck,
+                pipe_desugartc,
+                // pipe_engine
+                pipe_xmachina
+
+*/

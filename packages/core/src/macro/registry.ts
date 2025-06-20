@@ -1,9 +1,9 @@
-import { ASTNode, Frame, MetaItemNode, Module } from "../types";
+import { ASTNode, EEnv, MetaItemNode, Module } from "../types";
 
 export type RegArgs = {
     node: ASTNode,
     module: Module,
-    frame: Frame,
+    env: EEnv,
     meta_item?: MetaItemNode
 }
 

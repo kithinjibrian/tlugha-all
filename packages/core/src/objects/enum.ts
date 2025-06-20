@@ -1,66 +1,23 @@
-import { ASTNode, BlockNode, BoolType, Engine, Frame, FunctionDecNode, FunctionType, IdentifierNode, MemberDecNode, MemberType, NumberNode, NumberType, ReturnNode, TupleType } from "../types";
+import { FatMap } from "../fats/map";
+import { FunctionDecNode, Serializer } from "../types";
 import { Env, Type } from "./base";
 
 
-let m: Record<string, any> = {
-    async __index__(env: Env, value: Type<any>, args: any[]) {
-        const frame = new Frame();
-
-        await env.engine.execute_function(
-            args[0],
-            [value, args[1]],
-            frame
-        );
-
-        return frame.stack.pop();
-    }
-}
-
 export class EnumType extends Type<Type<any>> {
-    public members: Map<string, FunctionDecNode | MemberDecNode> = new Map();
+    public members: FatMap<string, FunctionDecNode> = new FatMap();
     constructor(
         public tag: string,
         value: any,
-        members?: Array<FunctionDecNode | MemberDecNode>
+        members?: Array<FunctionDecNode>
     ) {
         super("enum", value, {
-            str: async () => `${tag}${!(value instanceof NumberType) ? await value.str() : ''}`,
             getValue: () => {
                 return value;
-            },
-            eq: async (env: Env, obj: Type<any>) => {
-                if (obj instanceof EnumType) {
-                    if (obj.tag == tag) {
-                        return new BoolType(true)
-                    }
-                }
-                return new BoolType(false)
-            },
-            neq: async (env: Env, obj: Type<any>) => {
-                return await(await this.eq(env, obj)).not(env);
             },
             get: async (env: Env, obj: Type<any>, args: Type<any>[]) => {
                 const index = obj.getValue();
 
                 // console.log(index, this.members);
-
-                if (this.members.has(index)) {
-                    const mem = this.members.get(index)
-                    if (mem !== undefined) {
-                        if (mem instanceof MemberDecNode) {
-                            args.unshift(this)
-                        }
-                        return new MemberType(mem);
-                    }
-                } else {
-                    let i = this.members.get("__index__");
-
-                    if (i) {
-                        return await m["__index__"](env, this, [i, obj]);
-                    }
-
-                    throw new Error(`Field '${index}' doesn't exist on struct '${name}'`)
-                }
             }
         });
 
@@ -69,6 +26,34 @@ export class EnumType extends Type<Type<any>> {
                 this.members.set(m.identifier.name, m);
             })
         }
+    }
+
+    toJSON(serializer: Serializer) {
+        return {
+            format: "lugha",
+            __id: this.__id,
+            version: "0.0.0",
+            type: "objects",
+            value: {
+                type: this.type,
+                value: {
+                    tag: this.tag,
+                    value: this.value,
+                    members: this.members
+                }
+            }
+        }
+    }
+
+    static from_json(value: any) {
+        const en = new EnumType(
+            value.tag,
+            value.value,
+        );
+
+        en.members = value.members;
+
+        return en;
     }
 
     *[Symbol.iterator]() {

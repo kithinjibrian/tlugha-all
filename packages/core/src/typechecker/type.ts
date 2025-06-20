@@ -41,39 +41,32 @@ export class NumberTypes extends Base {
         if (!this.instances) {
             const types: Record<string, Types> = {
                 "sqrt": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num"),
                 ),
                 "abs": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num"),
                 ),
                 "ceil": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num"),
                 ),
                 "floor": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num")
                 ),
                 "round": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num"),
                 ),
                 "trunc": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("num"),
                 ),
                 "pow": tfun(
-                    tcon_ex("Array", [tcon("num", null)], null),
-                    tcon("num", null),
-                    null
+                    tcon_ex("Array", [tcon("num")]),
+                    tcon("num"),
                 ),
             }
 
@@ -103,10 +96,9 @@ export class StringTypes extends Base {
             const types: Record<string, Types> = {
                 "format": tfun(
                     tcon_ex("Array", [
-                        tvar(null),
-                    ], null),
-                    tcon("str", null),
-                    null
+                        tvar([]),
+                    ]),
+                    tcon("str"),
                 )
             }
 
@@ -135,9 +127,8 @@ export class TupleTypes extends Base {
         if (!this.instances) {
             const types: Record<string, Types> = {
                 "is_empty": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("bool", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("bool"),
                 )
             }
 
@@ -166,9 +157,14 @@ export class ArrayTypes extends Base {
         if (!this.instances) {
             const types: Record<string, Types> = {
                 "is_empty": tfun(
-                    tcon_ex("Array", [], null),
-                    tcon("bool", null),
-                    null
+                    tcon_ex("Array", []),
+                    tcon("bool"),
+                ),
+                "push": tfun(
+                    tcon_ex("Array", [
+                        tvar([])
+                    ]),
+                    tcon("bool"),
                 )
             }
 
@@ -187,8 +183,7 @@ export type Types =
     | {
         tag: "TVar";
         tvar: string;
-        ast: ASTNode | null,
-        methods?: Base
+        dependencies: ASTNode[]
     }
     | {
         tag: "TCon";
@@ -196,8 +191,7 @@ export type Types =
             name: string;
             types: Types[];
         };
-        ast: ASTNode | null;
-        methods?: Base
+        dependencies: ASTNode[]
     }
     | {
         tag: "TRec";
@@ -205,8 +199,8 @@ export type Types =
             name: string;
             types: Record<string, Types>;
         },
-        ast: ASTNode | null,
-        methods?: Base
+        dependencies: ASTNode[],
+        methods: Map<string, any>,
     }
     | {
         tag: "TSum";
@@ -214,24 +208,23 @@ export type Types =
             name: string;
             variants: Record<string, Types>;
         },
-        ast: ASTNode | null,
-        methods?: Base
+        dependencies: ASTNode[],
+        methods: Map<string, any>
     }
 
 
-export function tcon(type: string, ast: ASTNode | null, methods?: any): Types {
+export function tcon(type: string, dependencies: ASTNode[] = []): Types {
     return {
         tag: "TCon",
         tcon: {
             name: type,
             types: []
         },
-        ast,
-        methods
+        dependencies
     };
 }
 
-export function tfun(params: Types, ret: Types, ast: ASTNode | null): Types {
+export function tfun(params: Types, ret: Types, dependencies: ASTNode[] = []): Types {
     if (params.tag == "TCon" && params.tcon.name == "Array") {
         let p = params.tcon.types;
 
@@ -241,34 +234,33 @@ export function tfun(params: Types, ret: Types, ast: ASTNode | null): Types {
                 name: "->",
                 types: [...p, ret]
             },
-            ast
+            dependencies
         }
     }
 
     throw new Error("Bad tfun arguments");
 }
 
-export function tcon_ex(name: string, types: Types[], ast: ASTNode | null, methods?: any): Types {
+export function tcon_ex(name: string, types: Types[], dependencies: ASTNode[] = []): Types {
     return {
         tag: "TCon",
         tcon: {
             name: name,
             types: types
         },
-        ast,
-        methods
+        dependencies
     }
 }
 
 let counter = 0;
 
 export function tvar(
-    ast: ASTNode | null,
+    dependencies: ASTNode[],
     name?: string,
 ): Types {
     return {
         tag: "TVar",
         tvar: name ?? `T${counter++}`,
-        ast
+        dependencies
     };
 }

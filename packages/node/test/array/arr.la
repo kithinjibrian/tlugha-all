@@ -1,0 +1,56 @@
+let a = [1, 2, 3];
+
+a.push(2);
+a.pop();
+a.pop().unwrap();
+a.length();
+a.is_empty();
+
+let b = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+let i = 0;
+
+while i < b.length() {
+    root::builtin::__print__(b.pop().unwrap());
+    i += 1;
+}
+
+let a = [1, 2, 3];
+
+struct Iter {
+    index: num
+}
+
+impl Iter {
+    fun next<T, V>(self: T): Option<V> {
+        if self.index < a.length() {
+            let val = a[self.index];
+            self.index += 1;
+            Some(val)
+        } else {
+            None
+        }
+    }
+}
+
+use core::types::Array;
+
+// can't use type Iter here since its still unavailable
+impl Iter for Array {
+    fun iter<T>(arr: T): Iter {
+        Iter {
+            index: 0
+        }
+    } 
+}
+
+let i = a.iter();
+
+root::builtin::__print__(i.next());
+root::builtin::__print__(i.next());
+root::builtin::__print__(i.next());
+root::builtin::__print__(i.next()); // None
+
+for i in a {
+    root::builtin::__print__(i);
+}

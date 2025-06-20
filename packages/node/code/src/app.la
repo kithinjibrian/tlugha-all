@@ -1,12 +1,3 @@
-import b;
-
-struct Body {
-    name: str,
-    email: str,
-    phone: str
-}
-
-fun main(): unit {
-    let a = 90;
-    println!("{} {}", a, 'lol');
+fun a(b: num): num {
+    b
 }

@@ -48,7 +48,7 @@ fun eval(ast: AST): Value {
         AST::String(s) => Value::String(s),
         AST::Number(n) => Value::Number(n),
         AST::Object(properties) => {
-            let m = map {};
+            let m = Map {};
 
             for prop in properties {
                 match prop {

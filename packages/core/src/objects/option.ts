@@ -1,11 +1,11 @@
-import { create_node, Engine, NumberNode, TaggedNode, TupleVariantNode } from "../types"
+import { create_node, Module, NumberNode, TaggedNode, TupleVariantNode } from "../types"
 
-export let option = (engine: Engine, some: any, none: number) => {
+export let option = (engine: any, some: any, none: number) => {
     if (some !== undefined && some !== null) {
         let res = null
-        engine.root.children.map(mod => {
+        engine.root.children.map((mod: Module) => {
             if (mod.name == "Option") {
-                const tn = mod.frame.get("Some") as TaggedNode;
+                const tn = mod.env.get("Some") as TaggedNode;
                 res = new TaggedNode(
                     null,
                     "Some",
@@ -28,9 +28,9 @@ export let option = (engine: Engine, some: any, none: number) => {
     }
 
     let res = null
-    engine.root.children.map(mod => {
+    engine.root.children.map((mod: Module) => {
         if (mod.name == "Option") {
-            const tn = mod.frame.get("None") as TaggedNode;
+            const tn = mod.env.get("None") as TaggedNode;
             res = new TaggedNode(
                 null,
                 "None",

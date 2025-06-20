@@ -1,0 +1,22 @@
+import storex;
+
+use storex::{ Store };
+use super::graph::{ Checkpointer };
+
+struct InMemory {
+    checkpoints: Array<str>
+}
+
+impl InMemory {
+    fun new(): InMemory {
+        InMemory {
+            checkpoints: []
+        }
+    }
+}
+
+impl Checkpointer for InMemory {
+    fun save(self: Self, store: Store): unit {
+        self.checkpoints.push("{}".format([store.state]));
+    }
+}

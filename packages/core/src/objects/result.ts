@@ -1,16 +1,17 @@
 import {
     create_node,
-    Engine,
+    Module,
     TaggedNode,
     TupleVariantNode
 } from "../types"
 
-export let result = (engine: Engine, ok: any, err: any) => {
+export let result = (engine: any, ok: any, err: any) => {
     if (ok !== undefined && ok !== null) {
-        let res = null
-        engine.root.children.map(mod => {
+        let res = null;
+
+        engine.root.children.map((mod: Module) => {
             if (mod.name == "Result") {
-                const tn = mod.frame.get("Ok") as TaggedNode;
+                const tn = mod.env.get("Ok") as TaggedNode;
                 res = new TaggedNode(
                     null,
                     "Ok",
@@ -33,9 +34,9 @@ export let result = (engine: Engine, ok: any, err: any) => {
     }
 
     let res = null
-    engine.root.children.map(mod => {
+    engine.root.children.map((mod: Module) => {
         if (mod.name == "Result") {
-            const tn = mod.frame.get("Err") as TaggedNode;
+            const tn = mod.env.get("Err") as TaggedNode;
             res = new TaggedNode(
                 null,
                 "Err",

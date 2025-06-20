@@ -3,9 +3,9 @@ use std::lex::{ Lexer };
 use std::syn::{ Parser, AST };
 use std::proc_macro::{ Token };
 
+// doesn't work twice
 #[proc_macro]
 fun println(input: Array<Token>): Array<Token> {
-
     let parser = Parser::new(input);
     let ast = parser.parse().unwrap();
 

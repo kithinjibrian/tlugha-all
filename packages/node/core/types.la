@@ -1,0 +1,8 @@
+struct Num;
+struct Str;
+struct Map;
+struct Set;
+struct Bool;
+struct Unit;
+struct Tuple;
+struct Array;

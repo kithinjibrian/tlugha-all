@@ -28,6 +28,10 @@ export class ExtensionStore<TVisitor> {
         return this.instances.get(key)!;
     }
 
+    public static clear(): void {
+        this.instances.clear();
+    }
+
     public register(extension: Extension<TVisitor>): void {
         if (!this.extensions.find(ext => ext.name === extension.name)) {
             this.extensions.push(extension);

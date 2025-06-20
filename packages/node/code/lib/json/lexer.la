@@ -156,7 +156,7 @@ impl Lexer {
 
         let iden = value.join("");
 
-        const keywords = map {
+        const keywords = Map {
             "null": TokenType::Null,
             "true": TokenType::True,
             "false": TokenType::False
@@ -195,7 +195,7 @@ impl Lexer {
                 if ch == "\\" {
                     self.advance();
                     let escape_char = self.advance();
-                    let escape_seqs = map {
+                    let escape_seqs = Map {
                         "n": "\n",
                         "t": "\t",
                         "\\": "\\",

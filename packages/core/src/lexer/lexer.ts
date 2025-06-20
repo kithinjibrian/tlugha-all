@@ -61,6 +61,8 @@ function one_char(c: string) {
             return TokenType.Hash;
         case '!':
             return TokenType.ExclamationMark;
+        case '?':
+            return TokenType.QuestionMark;
         case '\n':
             return TokenType.Newline;
         default:
@@ -349,6 +351,10 @@ export class Lexer {
             ["type", TokenType.Type],
             ["in", TokenType.In],
             ["match", TokenType.Match],
+            ["trait", TokenType.Trait],
+            ["loop", TokenType.Loop],
+            ["yield", TokenType.Yield],
+            ["spawn", TokenType.Spawn],
         ]);
 
         return {

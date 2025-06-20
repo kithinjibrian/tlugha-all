@@ -24,7 +24,7 @@ import {
     ProgramNode,
     PropertyNode,
     ReturnNode,
-    ScopedIdentifierNode,
+    PathNode,
     SetNode,
     SourceElementsNode,
     StringNode,
@@ -42,7 +42,6 @@ import {
     VariableNode,
     VariableStatementNode,
     WhileNode,
-    MemberDecNode,
     LambdaNode,
     AliasNode,
     ForNode,
@@ -62,6 +61,18 @@ import {
     TuplePatternNode,
     FieldPatternNode,
     StructPatternNode,
+    WhileLetNode,
+    Key,
+    TraitSigNode,
+    TraitNode,
+    PostfixOpNode,
+    BreakNode,
+    ContinueNode,
+    YieldNode,
+    TertiaryExpressionNode,
+    CoroNode,
+    SpawnNode,
+    UnitNode,
 } from "./ast";
 
 import { Token } from "../lexer/lexer";
@@ -74,13 +85,23 @@ export interface Args {
     constant: boolean,
     ignore_type: boolean,
     skip_struct_init: boolean,
-    attributes: AttributeNode[]
+    attributes: AttributeNode[],
+    skip_generic: boolean
+}
+
+export class BodyError extends Error {
+    constructor(
+        public message: string
+    ) {
+        super();
+    }
 }
 
 export class Parser {
     private tokens: Token[] = [];
     private current: number = 0;
     private file_path: string;
+    private yield: boolean = false;
 
     constructor(
         tokens: Token[],
@@ -164,7 +185,7 @@ export class Parser {
     /*
         source_elements ::= (source_element)+
     */
-    private source_elements(args: Args): ASTNode {
+    private source_elements(args: Args): SourceElementsNode {
         const sources: ASTNode[] = [];
 
         while (!this.is_at_end()) {
@@ -178,10 +199,42 @@ export class Parser {
         source_element ::= statement
     */
     private source_element(args: Args): ASTNode {
-        return this.statement({
+        const statement = this.statement({
             ...args,
             statement: true
         });
+
+        // if (
+        //     statement instanceof ExpressionStatementNode
+        // ) {
+        //     // executable code should only be nested in functions not in root scope
+        //     this.error(
+        //         ErrorCodes.parser.EXECUTABLE_CODE_IN_ROOT_SCOPE,
+        //         "Executable code is not allowed in the root scope.",
+        //     )
+        // }
+
+        // if (statement instanceof VariableStatementNode) {
+        //     if (!statement.variables.constant) {
+        //         // only constant variables are allowed in root scope
+        //         this.error(
+        //             'NON_CONST_VARIABLE_IN_ROOT_SCOPE',
+        //             "Variables are not allowed in the root scope.",
+        //         )
+        //     }
+
+        //     if (statement.variables.expression) {
+        //         switch (statement.variables.expression.type) {
+        //             case 'CallExpression':
+        //                 this.error(
+        //                     'CALL_EXPRESSION_IN_ROOT_SCOPE',
+        //                     "Constant variables in root scope can't be initialized with a function call.",
+        //                 )
+        //         }
+        //     }
+        // }
+
+        return statement
     }
 
     /**
@@ -217,6 +270,8 @@ export class Parser {
                 return this.function_declaration(args);
             case TokenType.While:
                 return this.while_statement(args);
+            case TokenType.Loop:
+                return this.loop_statement(args);
             case TokenType.For:
                 return this.for_statement(args);
             case TokenType.Return:
@@ -239,6 +294,8 @@ export class Parser {
                 return this.alias(args);
             case TokenType.Impl:
                 return this.impl(args);
+            case TokenType.Trait:
+                return this.trait(args);
             case TokenType.Const:
             case TokenType.Let:
                 {
@@ -363,7 +420,7 @@ export class Parser {
 
     private parseMetaItem(args: Args): MetaItemNode {
         const startToken = this.peek();
-        const path = this.scoped_identifier(args);
+        const path = this.path_identifier(args);
 
         if (this.match(TokenType.Equals)) {
             const value = this.constants(args);
@@ -411,7 +468,7 @@ export class Parser {
     }
 
     // function_declaration ::= "fun" identifier (type_parameters)? "(" (parameter_list)? ")" type_annotation function_body
-    private function_declaration(args: Args): FunctionDecNode {
+    public function_declaration(args: Args): FunctionDecNode | TraitSigNode {
         // Expect function keyword ('fun')
         if (!this.match(TokenType.Fun)) {
             this.error(
@@ -423,6 +480,8 @@ export class Parser {
                 "'fun my_function() { ... }'"
             );
         }
+
+        this.yield = false;
 
         const fun_token = this.peek();
 
@@ -489,9 +548,56 @@ export class Parser {
             );
         }
 
-        // Expect function body (block)
-        let body = this.block(args);
-        body.name = `fn_body_${functionName.name}`;
+        let body;
+
+        try {
+            body = this.block(args);
+            body.name = `fn_body_${functionName.name}`;
+        } catch (e) {
+            if (e instanceof BodyError) {
+                throw new Error(e.message);
+            }
+
+            // some errors can be ignored here
+            if (!this.match(TokenType.SemiColon)) {
+                this.error(
+                    ErrorCodes.parser.SYNTAX_ERROR,
+                    "Expected ';' after function signature.",
+                    "Ensure the function signature is followed by a ';' token.",
+                    `Found token: '${this.peek().value}' instead of ';'`,
+                    [";"],
+                    "'fun my_function();'"
+                )
+            }
+
+            return new TraitSigNode(
+                fun_token,
+                functionName,
+                parameters,
+                tp,
+                rt,
+                args.attributes
+            )
+        }
+
+        // let coro = this.yield;
+
+        // this.yield = false;
+
+        // if (coro) {
+        //     return new CoroNode(
+        //         fun_token,
+        //         functionName,
+        //         parameters,
+        //         body,
+        //         false,
+        //         false,
+        //         false,
+        //         tp,
+        //         rt,
+        //         args.attributes,
+        //     )
+        // }
 
         return new FunctionDecNode(
             fun_token,
@@ -503,7 +609,7 @@ export class Parser {
             false,
             tp,
             rt,
-            args.attributes
+            args.attributes,
         );
     }
 
@@ -705,8 +811,6 @@ export class Parser {
             );
         }
 
-        if (this.match(TokenType.LeftParen)) { }
-
         const variable = this.identifier(args);
 
         if (!this.match(TokenType.In)) {
@@ -721,8 +825,6 @@ export class Parser {
             skip_struct_init: true
         });
 
-        if (this.match(TokenType.RightParen)) { }
-
         // Parse the body of the while loop
         const body = this.block(args);
 
@@ -734,7 +836,7 @@ export class Parser {
         return new ForNode(token, variable, expression, body);
     }
 
-    // "while" "(" expression ")" statement
+    // "while" expression statement
     private while_statement(args: Args): WhileNode {
         const token = this.peek();
         // Check for the 'while' keyword
@@ -749,17 +851,16 @@ export class Parser {
             );
         }
 
-        // Expect opening parenthesis
-        if (this.match(TokenType.LeftParen)) { }
+        if (this.check(TokenType.Let)) {
+            this.backtrack(); // return to while
+            return this.while_let_statement(args);
+        }
 
         // Parse the loop expression
         let expression = this.expression({
             ...args,
             skip_struct_init: true
         });
-
-        // Expect closing parenthesis
-        if (this.match(TokenType.RightParen)) { }
 
         // Parse the body of the while loop
         const body = this.block(args);
@@ -771,6 +872,97 @@ export class Parser {
 
         // Return the constructed WhileNode
         return new WhileNode(token, expression, body);
+    }
+
+    private loop_statement(args: Args): WhileNode {
+        const token = this.peek();
+        // Check for the 'loop' keyword
+        if (!this.match(TokenType.Loop)) {
+            this.error(
+                ErrorCodes.parser.MISSING_WHILE_KEYWORD,
+                "Expected keyword 'while' to start a while loop.",
+                "Ensure you're starting the loop with the 'while' keyword.",
+                `Found token: '${this.peek().value}' instead of 'while'.`,
+                ["'while'"],
+                "'loop { ... }'"
+            );
+        }
+
+        // Parse the loop expression
+        let expression = new BooleanNode(token, true);
+
+        // Parse the body of the while loop
+        const body = this.block(args);
+
+        // If the body is a block, name it "While"
+        if (body instanceof BlockNode) {
+            body.name = "Loop";
+        }
+
+        // Return the constructed WhileNode
+        return new WhileNode(token, expression, body);
+    }
+
+    private while_let_statement(args: Args): WhileLetNode {
+        const token = this.peek();
+        // Check for the 'while' keyword
+        if (!this.match(TokenType.While)) {
+            this.error(
+                ErrorCodes.parser.MISSING_WHILE_KEYWORD,
+                "Expected keyword 'while' to start a while loop.",
+                "Ensure you're starting the loop with the 'while' keyword.",
+                `Found token: '${this.peek().value}' instead of 'while'.`,
+                ["'while'"],
+                "'while let pattern = expr { ... }'"
+            );
+        }
+
+        if (!this.match(TokenType.Let)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'if' to begin if let expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        const pattern = this.pattern(args);
+
+        if (!pattern) this.error(ErrorCodes.parser.SYNTAX_ERROR, "Empty pattern")
+
+        if (!this.match(TokenType.Equals)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected 'if' to begin if let expression.",
+                "Struct initialization requires opening with a curly brace '{'.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'Person {name: \"John\", age: 30}'"
+            );
+        }
+
+        const exppression = this.expression({
+            ...args,
+            skip_struct_init: true
+        });
+
+        // Parse the body of the while loop
+        const body = this.block(args);
+
+        // If the body is a block, name it "While"
+        if (body instanceof BlockNode) {
+            body.name = "WhileLet";
+        }
+
+        // Return the constructed WhileNode
+        return new WhileLetNode(
+            token,
+            pattern,
+            exppression,
+            body
+        );
     }
 
     /*  
@@ -794,7 +986,8 @@ export class Parser {
 
         // Parse statements inside the block
         while (!this.check(TokenType.RightBrace) && !this.is_at_end()) {
-            body.push(this.statement(args));
+            let stmt = this.statement(args);
+            body.push(stmt);
         }
 
         let must_semi: ASTNode[] = [], errors = [];
@@ -807,7 +1000,10 @@ export class Parser {
                 body[i] instanceof VariableStatementNode ||
                 body[i] instanceof FunctionDecNode ||
                 body[i] instanceof MatchNode ||
-                body[i] instanceof ForNode
+                body[i] instanceof ForNode ||
+                body[i] instanceof YieldNode ||
+                body[i] instanceof StructNode ||
+                body[i] instanceof ImplNode
             )) {
                 must_semi.push(body[i]);
             }
@@ -835,7 +1031,7 @@ export class Parser {
         }
 
         if (errors.length > 1)
-            throw new Error(errors.join("\n\n"));
+            throw new BodyError(errors.join("\n\n"));
 
         // Expect closing brace
         if (!this.match(TokenType.RightBrace)) {
@@ -850,6 +1046,27 @@ export class Parser {
         }
 
         return new BlockNode(this.peek(), body);
+    }
+
+    private yield_expression(args: Args): YieldNode {
+        // Expect the 'yield' keyword
+        if (!this.match(TokenType.Yield)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RETURN_KEYWORD,
+                "Expected 'return' keyword to start the return statement.",
+                "Ensure that the return statement begins with the 'return' keyword.",
+                `Found token: '${this.peek().value}' instead of 'return'.`,
+                ["'return'"],
+                "'yield value;'"
+            );
+        }
+
+        // Parse the expression after 'yield'
+        const expression = this.expression(args);
+
+        this.yield = true;
+
+        return new YieldNode(this.peek(), expression);
     }
 
     private return_statement(args: Args): ReturnNode {
@@ -904,24 +1121,20 @@ export class Parser {
         }
 
         if (!this.match(TokenType.SemiColon)) {
-            this.error(
-                ErrorCodes.parser.MISSING_SEMICOLON,
-                "Expected ';' after 'break'.",
-                "Statements must end with a semicolon.",
-                `Found token: '${this.peek().value}' instead of ';'.`,
-                ["';'"],
-                "'break;'"
-            );
+            // WILL BITE BACK
+            if (args.statement) {
+                this.error(
+                    ErrorCodes.parser.MISSING_SEMICOLON,
+                    "Expected ';' after 'break'.",
+                    "Statements must end with a semicolon.",
+                    `Found token: '${this.peek().value}' instead of ';'.`,
+                    ["';'"],
+                    "'break;'"
+                );
+            }
         }
 
-        return {
-            hot: new Map(),
-            type: "Break",
-            token,
-            accept(visitor, argz) {
-                return visitor.visitBreak?.(this, argz);
-            }
-        };
+        return new BreakNode(token);
     }
 
     private continue_statement(args: Args): ASTNode {
@@ -938,24 +1151,39 @@ export class Parser {
         }
 
         if (!this.match(TokenType.SemiColon)) {
+            // WILL BITE BACK
+            if (args.statement) {
+                this.error(
+                    ErrorCodes.parser.MISSING_SEMICOLON,
+                    "Expected ';' after 'continue'.",
+                    "Statements must end with a semicolon.",
+                    `Found token: '${this.peek().value}' instead of ';'.`,
+                    ["';'"],
+                    "'continue;'"
+                );
+            }
+        }
+
+        return new ContinueNode(token);
+    }
+
+    private spawn_expression(args: Args): SpawnNode {
+        const token = this.peek();
+
+        if (!this.match(TokenType.Spawn)) {
             this.error(
-                ErrorCodes.parser.MISSING_SEMICOLON,
-                "Expected ';' after 'continue'.",
-                "Statements must end with a semicolon.",
-                `Found token: '${this.peek().value}' instead of ';'.`,
-                ["';'"],
-                "'continue;'"
+                'MISSING_SPAWN_KEYWORD',
+                "Expected 'spawn' keyword to start a spawn statement.",
+                "The 'spawn' statement must start with the keyword 'spawn'.",
+                `Found token: '${this.peek().value}' instead of 'spawn'.`,
+                ["'spawn'"],
+                "'spawn (expression) { ... }'"
             );
         }
 
-        return {
-            type: "Continue",
-            hot: new Map(),
-            token,
-            accept(visitor, argz) {
-                return visitor.visitContinue?.(this, argz);
-            }
-        };
+        const expression = this.expression(args);
+
+        return new SpawnNode(token, expression);
     }
 
     // "if" "(" expression ")" statement ("else" statement)?
@@ -978,14 +1206,11 @@ export class Parser {
             return this.if_let_expression(args);
         }
 
-        if (this.match(TokenType.LeftParen)) { }
-
         let condition = this.expression({
             ...args,
-            skip_struct_init: true
+            skip_struct_init: true,
+            skip_generic: true
         });
-
-        if (this.match(TokenType.RightParen)) { }
 
         const consequent = this.block(args);
 
@@ -1077,8 +1302,8 @@ export class Parser {
         );
     }
 
-    // scoped_identifier ::= identifier  ("::" identifier)*
-    private scoped_identifier(args: Args): ScopedIdentifierNode {
+    // path_identifier ::= identifier  ("::" identifier)*
+    private path_identifier(args: Args): PathNode {
         if (!this.match(TokenType.Identifier)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_IDENTIFIER,
@@ -1106,7 +1331,7 @@ export class Parser {
             names.push(this.previous().value);
         }
 
-        return new ScopedIdentifierNode(this.peek(), names);
+        return new PathNode(this.peek(), names);
     }
 
     private identifier(args: Args): IdentifierNode {
@@ -1139,6 +1364,24 @@ export class Parser {
 
         const identifier = this.identifier(args);
 
+        let tp = undefined;
+
+        if (this.match(TokenType.LT)) {
+            tp = this.type_parameters(args);
+
+            // Expect closing '>'
+            if (!this.match(TokenType.GT)) {
+                this.error(
+                    ErrorCodes.parser.MISSING_GREATER_THAN,
+                    "Expected '>' after type parameters.",
+                    "Ensure that you close your type parameters with a closing '>' token.",
+                    `Found token: '${this.peek().value}' instead of '>'`,
+                    [">"],
+                    "'fun my_function<T>(param T) { ... }'"
+                );
+            }
+        }
+
         if (!this.match(TokenType.Equals)) {
             this.error(
                 ErrorCodes.parser.EXPECTED_EQUAL_SIGN,
@@ -1163,7 +1406,7 @@ export class Parser {
             );
         }
 
-        return new AliasNode(this.peek(), identifier, data_type);
+        return new AliasNode(this.peek(), identifier, data_type, tp);
     }
 
     /**
@@ -1388,10 +1631,12 @@ export class Parser {
 
     // expression_statement::= expression ";"
     private expression_statement(args: Args): ASTNode {
+        const token = this.peek();
+
         const expression = this.expression(args);
 
         if (this.match(TokenType.SemiColon)) {
-            return new ExpressionStatementNode(this.peek(), expression);
+            return new ExpressionStatementNode(token, expression);
         }
 
         return expression;
@@ -1442,11 +1687,11 @@ export class Parser {
 
     private is_valid_assignment_target(node: ASTNode): boolean {
         switch (node.type) {
-            case 'Identifier':
+            case 'IdentifierNode':
                 return true;
-            case 'ScopedIdentifier':
+            case 'PathNode':
                 return true;
-            case 'MemberExpression':
+            case 'MemberExpressionNode':
                 return true;
             default:
                 return false;
@@ -1520,17 +1765,12 @@ export class Parser {
 
             const alternate = this.conditional_expression(args);
 
-            return {
-                type: 'TertiaryExpression',
-                token: this.peek(),
-                hot: new Map(),
+            return new TertiaryExpressionNode(
+                this.peek(),
                 condition,
                 consequent,
-                alternate,
-                accept(visitor) {
-                    return visitor.visitTertiaryExpression?.(this); // COMEBACK HERE
-                }
-            } as ASTNode;
+                alternate
+            )
         }
 
         return condition;
@@ -1729,7 +1969,8 @@ export class Parser {
             if (this.match(TokenType.LeftBracket)) {
                 expr = this.parseArrayAccess(expr, args);
             }
-            else if (this.match(TokenType.LT)) {
+            else if (this.check(TokenType.LT) && this.is_start_generic()) {
+                this.match(TokenType.LT);
                 expr = this.parseGenericCall(expr, args);
             }
             else if (this.match(TokenType.LeftParen)) {
@@ -1743,7 +1984,50 @@ export class Parser {
             }
         }
 
+        if (this.is_postfix_operator(this.peek().type)) {
+            const operator = this.advance().value;
+            return new PostfixOpNode(this.peek(), operator, expr);
+        }
+
         return expr;
+    }
+
+    private is_start_generic() {
+        let depth = 0;
+        let i = 0;
+        const maxLookahead = 64; // to prevent runaway parsing
+
+        while (i < maxLookahead) {
+            const token = this.peek(i++);
+
+            switch (token.type) {
+                case TokenType.LT:
+                    depth++;
+                    break;
+                case TokenType.GT:
+                    depth--;
+                    if (depth < 0) return false;
+                    if (depth === 0) {
+                        // Check if next significant token is `(`
+                        const next = this.peek(i++);
+                        return next.type === TokenType.LeftParen;
+                    }
+                    break;
+                case TokenType.EOF:
+                    return false;
+                case TokenType.SemiColon:
+                case TokenType.Equals:
+                case TokenType.RightBrace:
+                case TokenType.LeftBrace:
+                    return false;
+            }
+        }
+
+        return false;
+    }
+
+    private is_postfix_operator(type: TokenType): boolean {
+        return type === TokenType.QuestionMark
     }
 
     private parseArgumentList(args: Args): ASTNode[] {
@@ -1872,6 +2156,10 @@ export class Parser {
                 return this.array(args);
             case TokenType.LeftBrace:
                 return this.block(args);
+            case TokenType.Spawn:
+                return this.spawn_expression(args);
+            case TokenType.Yield:
+                return this.yield_expression(args);
             case TokenType.Fun:
                 return this.lambda_function(args);
             case TokenType.If:
@@ -1879,7 +2167,7 @@ export class Parser {
             case TokenType.Match:
                 return this.match_expression(args);
             case TokenType.Identifier: {
-                const iden = this.scoped_identifier(args);
+                let iden: any = this.path_identifier(args);
                 if (this.match(TokenType.ExclamationMark)) {
                     if (!this.match(TokenType.LeftParen)) {
                         ErrorCodes.parser.MISSING_LEFT_PAREN,
@@ -1907,16 +2195,22 @@ export class Parser {
                 }
 
                 if (iden.name.length == 1) {
-                    if (iden.name[0] == "map") {
+                    // legacy support 'map' and 'set'
+                    if (iden.name[0] == "Map" || iden.name[0] == "map") {
                         return this.map(args);
-                    } else if (iden.name[0] == "set") {
+                    } else if (iden.name[0] == "Set" || iden.name[0] == "set") {
                         return this.set(args);
                     }
 
                 }
 
+                if (iden.name.length == 1) {
+                    iden = new IdentifierNode(token, iden.name[0]);
+                }
+
                 if (!args.skip_struct_init && this.peek().type == TokenType.LeftBrace) {
                     const fields = this.struct_initializer(args);
+
                     return new StructInitNode(token, iden, fields);
                 }
 
@@ -1926,6 +2220,11 @@ export class Parser {
                 this.advance();
 
                 const exprs = [];
+
+                if (this.check(TokenType.RightParen)) {
+                    this.advance();
+                    return new UnitNode(token);
+                }
 
                 do {
                     exprs.push(this.expression(args))
@@ -1942,10 +2241,7 @@ export class Parser {
                     );
                 }
 
-                if (exprs.length > 1) {
-                    return new TupleNode(token, exprs);
-                }
-                return exprs[0];
+                return new TupleNode(token, exprs);
             }
             default:
                 return this.error(
@@ -2124,15 +2420,15 @@ export class Parser {
         return new MapNode(token, properties);
     }
 
-    private extractValidKey(expr: ASTNode, hasColon: boolean): string {
+    private extractValidKey(expr: ASTNode, hasColon: boolean): Key {
         if (expr instanceof StringNode) {
-            if (!hasColon) {
-                return expr.value;
-            }
-            return expr.value;
+            return {
+                type: "string",
+                value: expr.value
+            };
         }
 
-        if (expr instanceof ScopedIdentifierNode) {
+        if (expr instanceof PathNode) {
             if (expr.name.length > 1) {
                 this.error(
                     ErrorCodes.parser.MALFORMED_MAP_KEY,
@@ -2143,11 +2439,26 @@ export class Parser {
                     "Use simple keys like: map { name: value }"
                 );
             }
-            return expr.name[0];
+            return {
+                type: "string",
+                value: expr.name[0]
+            };
         }
 
         if (expr instanceof IdentifierNode) {
-            return expr.name;
+            return {
+                type: "string",
+                value: expr.name
+            };
+        }
+
+        if (expr instanceof ArrayNode) {
+            if (expr.elements.length == 1) {
+                return {
+                    type: "ast",
+                    value: expr.elements[0]
+                }
+            }
         }
 
         this.error(
@@ -2238,14 +2549,10 @@ export class Parser {
             );
         }
 
-        if (this.match(TokenType.LeftParen)) { }
-
         const exppression = this.expression({
             ...args,
             skip_struct_init: true
         });
-
-        if (this.match(TokenType.RightParen)) { }
 
         const consequent = this.block(args);
 
@@ -2257,7 +2564,7 @@ export class Parser {
         return new IfLetNode(token, pattern, exppression, consequent);
     }
 
-    private match_expression(args: Args): MatchNode {
+    public match_expression(args: Args): MatchNode {
         const token = this.peek();
         if (!this.match(TokenType.Match)) {
             this.error(
@@ -2270,14 +2577,10 @@ export class Parser {
             );
         }
 
-        if (this.match(TokenType.LeftParen)) { }
-
         const expression = this.expression({
             ...args,
             skip_struct_init: true
         });
-
-        if (this.match(TokenType.RightParen)) { }
 
         const body: MatchArmNode[] = [];
 
@@ -2348,7 +2651,7 @@ export class Parser {
         let exp_block = this.statement({
             ...args,
             statement: false
-        })
+        });
 
         return new MatchArmNode(token, pattern, guardExpr, exp_block)
     }
@@ -2379,7 +2682,7 @@ export class Parser {
                     return new WildcardNode(token)
                 }
 
-                const path = this.scoped_identifier(args);
+                const path = this.path_identifier(args);
 
                 if (this.match(TokenType.LeftBrace)) {
                     const field_patterns = this.field_pattern_list(args);
@@ -2525,6 +2828,62 @@ export class Parser {
         return new StructFieldNode(this.peek(), iden, expr)
     }
 
+    private trait(args: Args): ASTNode {
+        const token = this.peek();
+
+        if (!this.match(TokenType.Trait)) {
+            this.error(
+                ErrorCodes.parser.EXPECTED_TRAIT_KEYWORD,
+                "Expected 'trait' keyword to begin trait declaration.",
+                "Trait declarations must start with the 'trait' keyword.",
+                `Found token: '${this.peek().value}' instead of 'trait'`,
+                ["trait"],
+                "'trait Person { ... }'"
+            );
+        }
+
+        const iden = this.identifier(args);
+
+        if (!this.match(TokenType.LeftBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_LEFT_BRACE,
+                "Expected '{' to begin trait body.",
+                "Trait declarations require a body enclosed in curly braces.",
+                `Found token: '${this.peek().value}' instead of '{'`,
+                ["{"],
+                "'trait Person { name: string; age: num; }'"
+            );
+        }
+
+        const body = this.trait_body(args)
+
+        if (!this.match(TokenType.RightBrace)) {
+            this.error(
+                ErrorCodes.parser.MISSING_RIGHT_BRACE,
+                "Expected '}' to end trait body.",
+                "Trait declarations require a body enclosed in curly braces.",
+                `Found token: '${this.peek().value}' instead of '}'`,
+                ["}"],
+                "'trait Person { name: string; age: num; }'"
+            );
+        }
+
+        return new TraitNode(token, iden, body);
+    }
+
+    private trait_body(args: Args) {
+        const token = this.peek();
+        const body: (FunctionDecNode | TraitSigNode)[] = [];
+
+        while (!this.check(TokenType.RightBrace)) {
+            let fun = this.function_declaration(args);
+
+            body.push(fun);
+        }
+
+        return body;
+    }
+
     private impl(args: Args): ImplNode {
         const token = this.peek();
 
@@ -2539,7 +2898,16 @@ export class Parser {
             );
         }
 
-        const iden = this.identifier(args);
+        let trait = undefined;
+        let type = this.identifier(args);
+
+        if (this.match(TokenType.For)) {
+            let temp = this.identifier(args);
+
+            // swap type and trait
+            trait = type;
+            type = temp;
+        }
 
         if (!this.match(TokenType.LeftBrace)) {
             this.error(
@@ -2565,20 +2933,22 @@ export class Parser {
             );
         }
 
-        return new ImplNode(token, iden, body)
+        return new ImplNode(token, trait, type, body)
     }
 
-    private impl_body(args: Args): Array<FunctionDecNode | MemberDecNode> {
-        const fields: Array<FunctionDecNode | MemberDecNode> = [];
+    private impl_body(args: Args): Array<FunctionDecNode> {
+        const fields: Array<FunctionDecNode> = [];
 
         while (!this.check(TokenType.RightBrace)) {
             let fun = this.function_declaration(args);
 
-            if (fun.params?.parameters[0].identifier.name == "self") {
-                fun = new MemberDecNode(this.peek(), fun)
-            }
+            if (fun instanceof FunctionDecNode) {
+                // if (fun.params?.parameters[0].identifier.name == "self") {
+                //     fun = new MemberDecNode(this.peek(), fun)
+                // }
 
-            fields.push(fun);
+                fields.push(fun as FunctionDecNode);
+            }
         }
 
         return fields;
@@ -2620,6 +2990,10 @@ struct_method ::= "fun" identifier "(" parameter_list ")" (type_annotation)? fun
 
         const name = this.peek().value;
         this.advance();
+
+        if (this.match(TokenType.SemiColon)) {
+            return new StructNode(token, name, []);
+        }
 
         let tp: TypeParameterNode[] | undefined = undefined;
 

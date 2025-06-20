@@ -1,26 +1,22 @@
 import {
     Lexer,
-    TC_Module,
     Parser,
     Module,
     ASTNode,
     ExtensionStore,
     ASTCache,
-    TypeChecker,
-    BorrowChecker
+    add_builtins,
+    builtin,
+    Cache,
+    Args
 } from "@kithinji/tlugha-core";
-
-import {
-    EngineNode,
-} from "../types"
 
 import * as path from 'path';
 import { readFile } from "fs/promises";
-import { ExtEngine } from "./ext_engine";
-import { ExtProcMacro } from "./ext_procmacro";
-import { ExtTypeChecker } from "./ext_typechecker";
-import { ExtExpMacro } from "./ext_expmacro";
-import { ExpandMacroNode } from "../macro/expand";
+import { DesugarNode } from "../desugar/desugar";
+import { XMachinaNode } from "../xmachina/xmachina";
+import { DesugarTCNode } from "../desugar_tc/desugar_tc";
+import { TCNode } from "../tc/tc";
 
 export type pipe_args = {
     wd: string;
@@ -28,9 +24,15 @@ export type pipe_args = {
     file: string;
     ast?: ASTNode;
     code?: string;
+    phase?: string;
     file_path?: string,
-    engine?: EngineNode,
-    pm_module?: Module
+    engine?: any,
+    root_child?: "root" | "child",
+    pm_module?: Module,
+    xm_module?: Module,
+    tc_module?: Module,
+    dtc_module?: Module,
+    ds_module?: Module,
 }
 
 export type lugha_fn = (args: {
@@ -38,20 +40,170 @@ export type lugha_fn = (args: {
     rd: string;
     file: string;
     ast?: ASTNode;
+    phase?: string;
+    root_child?: "root" | "child";
     rt_module?: Module;
     pm_module?: Module;
     em_module?: Module;
-    tc_module?: TC_Module;
+    xm_module?: Module; // xmachina module
+    tc_module?: Module;
+    dtc_module?: Module;
+    ds_module?: Module;
     pipeline: ((args: pipe_args, next: Function) => void)[]
-}) => Promise<EngineNode | undefined>;
+}) => Promise<XMachinaNode | undefined>;
+
+const pipe_builtin = () => {
+    return async (tc: any, next: Function) => {
+        console.log("adding inbuilt functions");
+
+        add_builtins(builtin, { root: tc.root });
+
+        await next();
+    }
+}
+
+const pipe_core = (cache_name: string, mod_name: string, pipe_to: (args: pipe_args, next: Function) => void) => {
+    return async (tc: any, next: Function) => {
+        let module;
+
+        const dir = path.join(__dirname, "..");
+        const wd = path.join(dir, "../core");
+
+        // don't re import once in core modules
+        if (tc.wd == wd) return await next();
+
+        let cache = Cache.get_instance(cache_name);
+        const mod_path = path.join(wd, "__mod__.la");
+
+        if (cache.has_mod(mod_path)) {
+            module = cache.get_mod(mod_path) as Module;
+
+            module.children.map((mod: Module) => {
+                const m = tc.root.children.find((ch: Module) => ch.name == mod.name)
+                if (m == undefined) {
+                    tc.root.children.push(mod)
+                }
+            });
+
+            tc.root.children.map((mod: Module) => {
+                if (mod.name == "Result") {
+                    mod.env.symbol_table.entries().forEach(([key, value]) => {
+                        tc.root.env.define(key, value)
+                    })
+                } else if (mod.name == "Option") {
+                    mod.env.symbol_table.entries().forEach(([key, value]) => {
+                        tc.root.env.define(key, value)
+                    })
+                }
+            });
+        } else {
+            module = new Module("core", null, `${cache_name}-${tc.file}`, true);
+        }
+
+        tc.root.add_submodule(module);
+
+        if (!cache.has_mod(mod_path)) {
+            cache.add_mod(mod_path, module);
+
+            try {
+                await lugha({
+                    pipeline: [
+                        pipe_read,
+                        pipe_lp,
+                        pipe_to,
+                    ],
+                    file: "__mod__.la",
+                    wd,
+                    rd: dir,
+                    [mod_name]: module,
+                    root_child: "root"
+                });
+
+                module.children.map((mod: Module) => {
+                    const m = tc.root.children.find((ch: Module) => ch.name == mod.name)
+                    if (m == undefined) {
+                        tc.root.children.push(mod)
+                    }
+                });
+
+                tc.root.children.map((mod: Module) => {
+                    if (mod.name == "Result") {
+                        mod.env.symbol_table.entries().forEach(([key, value]) => {
+                            tc.root.env.define(key, value)
+                        })
+                    } else if (mod.name == "Option") {
+                        mod.env.symbol_table.entries().forEach(([key, value]) => {
+                            tc.root.env.define(key, value)
+                        })
+                    }
+                });
+            } catch (e) {
+                throw e;
+            }
+        }
+
+        await next();
+    }
+}
+
+const pipe_std = (cache_name: string, mod_name: string, pipe_to: (args: pipe_args, next: Function) => void) => {
+    return async (tc: any, next: Function) => {
+        let module;
+
+        const dir = path.join(__dirname, "..");
+        const wd = path.join(dir, "../std");
+        const core_wd = path.join(dir, "../core");
+
+        // don't re import once in std/core modules
+        if (tc.wd == core_wd) return await next();
+        if (tc.wd == wd) return await next();
+
+        let cache = Cache.get_instance(cache_name);
+        const mod_path = path.join(wd, "__mod__.la");
+
+        if (cache.has_mod(mod_path)) {
+            module = cache.get_mod(mod_path) as Module;
+        } else {
+            module = new Module("std", null, `${cache_name}-${tc.file}`, true);
+        }
+
+        tc.root.add_submodule(module);
+
+        if (!cache.has_mod(mod_path)) {
+            cache.add_mod(mod_path, module);
+
+            try {
+                await lugha({
+                    pipeline: [
+                        pipe_read,
+                        pipe_lp,
+                        pipe_to,
+                    ],
+                    file: "__mod__.la",
+                    wd,
+                    rd: dir,
+                    [mod_name]: module,
+                    root_child: "root"
+                });
+            } catch (e) {
+                throw e;
+            }
+        }
+
+        await next();
+    }
+}
 
 export const pipe_read = async (args: pipe_args, next: Function) => {
+    console.log("ENTERING PIPE READ!");
     try {
         args.file_path = path.join(args.wd, args.file);
 
         const c = ASTCache.get_instance();
         if (!c.has_ast(args.file_path)) {
-            args.code = await readFile(args.file_path, 'utf-8');
+            // skip reading code if we already have the ast
+            if (!args.ast)
+                args.code = await readFile(args.file_path, 'utf-8');
         }
 
         return await next();
@@ -62,6 +214,7 @@ export const pipe_read = async (args: pipe_args, next: Function) => {
 
 export const pipe_lp = async (args: pipe_args, next: Function) => {
     if (args.ast) return await next(); // skip lexing/parsing
+    console.log("ENTERING PIPE LEX/PARSE!");
 
     const c = ASTCache.get_instance();
 
@@ -91,86 +244,70 @@ export const pipe_lp = async (args: pipe_args, next: Function) => {
     }
 }
 
-export const pipe_procmacro = async (args: pipe_args, next: Function) => {
-    ExtensionStore.get_instance("macro").register(new ExtProcMacro(path.join(__dirname, "..")))
-    args.pm_module = new Module("root", null, "procmacro_module", false);
+export const pipe_desugar = async (args: pipe_args, next: Function) => {
+    console.log("ENTERING PIPE DESUGAR!");
 
     try {
-        let pm = new EngineNode(
+        const de = new DesugarNode(
             args.file_path ?? "",
             args.rd,
             args.wd,
-            args.pm_module,
-            lugha,
-            args.ast,
-            "macro"
-        );
-
-        await pm.run()
-
-        return await next();
-    } catch (e) {
-        throw e;
-    }
-}
-
-export const pipe_expandmacro = async (args: pipe_args, next: Function) => {
-    if (!args.pm_module) return await next();
-    ExtensionStore.get_instance("expand_macro").register(new ExtExpMacro(path.join(__dirname, "..")))
-
-    try {
-        let em = new ExpandMacroNode(
-            args.file_path ?? "",
-            args.rd,
-            args.wd,
-            args.pm_module,
-            lugha,
-            args.ast,
-        );
-
-        await em.run()
-
-        return await next();
-    } catch (e) {
-        throw e;
-    }
-}
-
-export const pipe_typecheck = async (args: pipe_args, next: Function) => {
-    ExtensionStore.get_instance("typechecker").register(new ExtTypeChecker(path.join(__dirname, "..")));
-
-    try {
-        const tc = new TypeChecker(
-            args.file_path ?? "",
-            args.rd,
-            args.wd,
-            new Module("root", null, "typecheck_module"),
-            lugha,
+            args.ds_module ?? new Module("root", null, "desugar_module"),
             args.ast
         );
+
+        de.pipes = [
+            pipe_core("desugar", "ds_module", pipe_desugar),
+            pipe_std("desugar", "ds_module", pipe_desugar),
+        ]
+
+        await de.run()
+
+        return await next();
+    } catch (e) {
+        throw e;
+    }
+}
+
+export const pipe_tc = async (args: pipe_args, next: Function) => {
+    try {
+        const tc = new TCNode(
+            args.file_path ?? "",
+            args.rd,
+            args.wd,
+            args.tc_module ?? new Module("root", null, "tc_module"),
+            args.ast,
+        );
+
+        tc.pipes = [
+            pipe_core("tc", "tc_module", pipe_tc),
+        ]
 
         await tc.run()
-
-        return await next();
     } catch (e) {
         throw e;
     }
 }
 
-export const pipe_borrowcheck = async (args: pipe_args, next: Function) => {
-    ExtensionStore.get_instance("borrowchecker");
+export const pipe_desugartc = async (args: pipe_args, next: Function) => {
+    console.log("ENTERING PIPE DESUGAR_TC!");
 
     try {
-        const bc = new BorrowChecker(
+        const de = new DesugarTCNode(
             args.file_path ?? "",
             args.rd,
             args.wd,
-            new Module("root", null, "borrowcheck_module"),
-            lugha,
+            args.dtc_module ?? new Module("root", null, "desugartc_module"),
             args.ast
         );
 
-        await bc.run()
+        de.pipes = [
+            pipe_builtin(),
+            pipe_core("desugar_tc", "dtc_module", pipe_desugartc),
+            pipe_std("desugar_tc", "dtc_module", pipe_desugartc),
+        ]
+
+        await de.run()
 
         return await next();
     } catch (e) {
@@ -178,26 +315,35 @@ export const pipe_borrowcheck = async (args: pipe_args, next: Function) => {
     }
 }
 
-export const pipe_engine = async (args: pipe_args, next: Function) => {
-    ExtensionStore.get_instance().register(new ExtEngine(path.join(__dirname, "..")))
+export const pipe_xmachina = async (args: pipe_args, next: Function) => {
+    console.log("ENTERING PIPE XMACHINA!");
+
     try {
-        const engine = new EngineNode(
+        const xmachina = new XMachinaNode(
             args.file_path ?? "",
             args.rd,
             args.wd,
-            new Module("root", null, "engine_module"),
-            lugha,
+            args.xm_module ?? new Module("root", null, "engine_module"),
             args.ast,
+            args.phase ?? "runtime"
         );
 
-        await engine.run()
+        xmachina.pipes.set(
+            "runtime",
+            [
+                pipe_builtin(),
+                pipe_core("xmachina", "xm_module", pipe_xmachina),
+                pipe_std("xmachina", "xm_module", pipe_xmachina),
+            ]
+        )
 
-        args.engine = engine;
+        await xmachina.run()
+
+        args.engine = xmachina;
     } catch (e) {
         throw e;
     }
 }
-
 
 export const lugha: lugha_fn = async ({
     rd,
@@ -205,13 +351,25 @@ export const lugha: lugha_fn = async ({
     file,
     ast,
     pipeline,
+    xm_module,
+    tc_module,
+    dtc_module,
+    ds_module,
+    phase,
+    root_child
 }) => {
     let index = 0;
     const ctx: pipe_args = {
         rd,
         wd,
         file,
-        ast
+        ast,
+        xm_module,
+        phase,
+        tc_module,
+        dtc_module,
+        ds_module,
+        root_child
     };
 
     async function next() {

@@ -1,5 +1,5 @@
 import axios from "axios"
-import { Type, Frame, NumberType, Engine } from "./types"
+import { Type } from "./types"
 import { Panic } from "./error/panic"
 
 export type Builtin =
@@ -38,13 +38,6 @@ export const builtin: Record<string, Builtin> = {
             return regex.test(args[1]);
         }
     },
-    __print__: {
-        type: "function",
-        signature: "(str) -> unit",
-        exec: (args: any[]) => {
-            console.log(args[0]);
-        }
-    },
     __panic__: {
         type: "function",
         signature: "(str) -> unit",
@@ -54,35 +47,34 @@ ${args[0]}
 `);
         }
     },
-    __set_timeout__: {
-        type: "function",
-        signature: "bool",
-        has_callback: true,
-        async: true,
-        exec: async (args: any[]) => {
-
-            const engine = args[0] as Engine;
-
-            const frame = new Frame();
-
-            await engine.execute_function(
-                args[2],
-                [new NumberType(90)],
-                frame
-            )
-
-            return null;
-        }
-    },
     __http_get__: {
         type: "function",
         async: true,
-        signature: "<T>(str, T) -> str",
+        signature: "<T>(url: str, T) -> str",
         exec: async (args: any[]) => {
             try {
-                const res = await axios.get(args[0], args[1]);
-                const { config, request, ...rest } = res;
-                return JSON.stringify(rest);
+                const response: Response = await fetch(args[0]);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader: ReadableStreamDefaultReader<Uint8Array> = response.body!.getReader();
+
+                while (true) {
+                    const { value, done }: ReadableStreamReadResult<Uint8Array> = await reader.read();
+
+                    if (done) {
+                        console.log('Stream complete');
+                        break;
+                    }
+
+                    if (value) {
+                        console.log('Received chunk:', value);
+                    }
+                }
+
+                return "kithinji";
             } catch (e: any) {
                 throw e;
             }
@@ -103,3 +95,9 @@ ${args[0]}
         }
     }
 }
+
+/*
+const res = await axios.get(args[0], args[1]);
+                const { config, request, ...rest } = res;
+                return JSON.stringify(rest);
+*/

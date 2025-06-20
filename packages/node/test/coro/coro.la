@@ -1,0 +1,162 @@
+fun coro(): num {
+    yield 1;
+    yield 2;
+    yield 3;
+    yield 4;
+    return 90;
+}
+
+struct Coro {}
+
+enum CoroOut<Y, C> {
+    Yield(T),
+    Complete(C),
+    Dead
+}
+
+struct CoroIter {
+    done: bool
+}
+
+impl CoroIter {
+    fun next(self: Self): CoroOut {
+        
+    }
+}
+
+impl Coro {
+    fun resume<T>(self: Self, args: T): CoroOut {
+        root::builtin::__coro_resume__(self, args)
+    }
+
+    fun iter(self: Self): CoroIter {
+        CoroIter { done: false }
+    }
+}
+
+fun main(): unit {
+    let c: Coro = root::builtin::__coro_create__(coro);
+
+    while true {
+        let out: CoroOut = c.resume(1);
+
+        match out {
+            CoroOut::Yield(v) => {
+                root::builtin::__print__("yielding");
+            },
+            CoroOut::Complete(c) => {
+                root::builtin::__print__("complete");
+            },
+            CoroOut::Dead => {
+                root::builtin::__print__("Dead");
+                break;
+            }
+        }
+    }
+}
+
+main();
+
+
+
+
+fun coro(): num {
+    yield 1;
+    yield 2;
+    yield 3;
+    yield 4;
+    return 90;
+}
+
+struct Coro {}
+
+enum CoroOut<Y, C> {
+    Yield(T),
+    Complete(C),
+    Dead
+}
+
+struct CoroIter {
+    done: bool,
+    coro: Coro
+}
+
+impl CoroIter {
+    fun next(itr: CoroIter): str {
+        itr.coro
+    }
+}
+
+impl Coro {
+    fun resume<T>(self: Self, args: T): CoroOut {
+        root::builtin::__coro_resume__(self, args)
+    }
+
+    fun iter(self: Self): CoroIter {
+        CoroIter { done: false, coro: self }
+    }
+}
+
+fun main(): unit {
+    let c: Coro = root::builtin::__coro_create__(coro);
+
+    let itr = c.iter();
+
+    root::builtin::__print__(itr.next());
+}
+
+main();
+
+
+fun coro(): num {
+    yield 1;
+    yield 2;
+    yield 3;
+    yield 4;
+    return 90;
+}
+
+struct Coro {}
+
+enum CoroOut<Y, C> {
+    Yield(T),
+    Complete(C),
+    Dead
+}
+
+struct CoroIter {
+    done: bool,
+    coro: Coro
+}
+
+impl CoroIter {
+    fun next<V>(self: CoroIter): Option<V> {
+        let out: CoroOut = self.coro.resume(());
+
+        match out {
+            CoroOut::Yield(v) => Some(80),
+            CoroOut::Complete(v) => Some(90),
+            CoroOut::Dead => None
+        }
+    }
+}
+
+impl Coro {
+    fun resume<T>(self: Self, args: T): CoroOut {
+        root::builtin::__coro_resume__(self, args)
+    }
+
+    fun iter(self: Self): CoroIter {
+        CoroIter { done: false, coro: self }
+    }
+}
+
+fun main(): unit {
+    let c: Coro = root::builtin::__coro_create__(coro);
+
+    for i in c {
+        root::builtin::__print__(i);
+    }
+}
+
+main();

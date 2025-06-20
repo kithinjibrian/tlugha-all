@@ -1,0 +1,46 @@
+type getter<S> = (state: S) -> str;
+type mutation<S> = (state: S, value: str) -> unit;
+type Subscriber<S> = (mutation: str, state: S) -> unit;
+
+struct StoreArgs<S> {
+    state: S,
+    mutations: Map<str, mutation<S>>
+}
+
+struct Store<S> {
+    state: S,
+    mutations: Map<str, mutation<S>>,
+    subscribers: Array<Subscriber>
+}
+
+impl Store {
+    fun new(storeArgs: StoreArgs): Store {
+        Store {
+            state: storeArgs.state,
+            mutations: storeArgs.mutations,
+            subscribers: []
+        }
+    }
+
+    fun commit(self: Self, mutation: str, value: str): Result<str, str> {
+        if let Ok(m) = self.mutations.get(mutation) {
+            m(self.state, value);
+
+            for subscriber in self.subscribers {
+                subscriber(mutation, self.state);
+            }
+        } else {
+            Err("mutation '{}' not found".format([mutation]))
+        }
+    }
+
+    fun subscribe(self: Self, subscriber: Subscriber): unit {
+        self.subscribers.push(subscriber);
+        let index = self.subscribers.length() - 1;
+
+        return fun () -> {
+            // use index here to remove subscriber
+            index
+        };
+    }
+}

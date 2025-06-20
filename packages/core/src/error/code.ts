@@ -61,6 +61,9 @@ export const ErrorCodes = {
         EXPECTED_MAP_KEYWORD: "PAR053",
         EXPECTED_SET_KEYWORD: "PAR054",
         INVALID_MAP_KEY: "PAR055",
+        EXPECTED_TRAIT_KEYWORD: "PAR056",
+        EXPECTED_FOR_KEYWORD: "PAR057",
+        EXECUTABLE_CODE_IN_ROOT_SCOPE: "PAR058",
     },
     proc_macro: {
         UNDEFINED_SYMBOL: "RUN001",

@@ -1,6 +1,7 @@
 import { spawn } from "child_process"
 import { builtin } from "@kithinji/tlugha-core"
 import { readFile, writeFile } from "fs/promises"
+import * as https from "https"
 
 builtin["__read__"] = {
     type: "function",
@@ -57,6 +58,50 @@ builtin["__shell__"] = {
                 }
             });
         });
+    }
+}
+
+builtin["__https_get__"] = {
+    type: "function",
+    signature: "(str, str) -> str",
+    exec: (args: any[]) => {
+        try {
+            const options = {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'CustomClient/1.0'
+                }
+            };
+
+            const url = new URL(args[0])
+            let data = false;
+
+            https.get(args[0], (res) => {
+                // When data is received
+                data = true;
+
+                res.on('data', (chunk) => {
+                    console.log(chunk)
+                });
+
+                // When response ends
+                res.on('end', () => {
+                    console.log('Response:', data);
+                });
+            })
+
+            // block until data is received
+            // while (!data) {
+
+            // }
+
+            return 90;
+
+        } catch (e: any) {
+            console.log(e);
+            throw e;
+        }
     }
 }
 

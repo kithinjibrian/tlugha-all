@@ -1,0 +1,9 @@
+module A {
+    struct Coro;
+
+    impl Coro {
+        fun next(): Self {
+            10
+        }
+    }
+}

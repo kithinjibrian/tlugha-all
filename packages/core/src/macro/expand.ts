@@ -15,7 +15,6 @@ import {
     EnumType,
     Registry,
     Module,
-    Frame,
     replace_node,
     push_between_node,
     NumberNode,
@@ -28,7 +27,8 @@ import {
     TypeNode,
     TError,
     ArrayNode,
-    ScopedIdentifierNode,
+    PathNode,
+    EEnv
 } from "../types";
 
 type Ret =
@@ -144,7 +144,7 @@ export class ExpandMacro implements ASTVisitor {
         }
 
         if (this.ast) {
-            await this.visit(this.ast, { frame: this.root.frame, module: this.root });
+            await this.visit(this.ast, { env: this.root.env, module: this.root });
         }
 
         return this;
@@ -173,11 +173,11 @@ export class ExpandMacro implements ASTVisitor {
 
     async visitFunctionDec(
         node: FunctionDecNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
-        await this.visit(node.body, { frame, module });
+        await this.visit(node.body, { env, module });
 
-        frame.define(node.identifier.name, node);
+        env.define(node.identifier.name, node);
     }
 
     async visitBlock(
@@ -195,35 +195,35 @@ export class ExpandMacro implements ASTVisitor {
 
     async visitStruct(
         node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
-        await this.visitStruct_Macro(node, { frame, module });
+        await this.visitStruct_Macro(node, { env, module });
     }
 
     async visitStruct_Macro(
         node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
         if (!node.attributes || node.attributes.length === 0) {
             return;
         }
 
         for (const attr of node.attributes) {
-            await this.evaluateAttribute(attr, node, { frame, module });
+            await this.evaluateAttribute(attr, node, { env, module });
         }
     }
 
     async evaluateAttribute(
         attr: AttributeNode,
         node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
         const metaItem = attr.meta;
         const name = metaItem.path.name[0];
 
         switch (name) {
             case "derive":
-                await this.derive(metaItem, node, { frame, module })
+                await this.derive(metaItem, node, { env, module })
                 break;
         }
     }
@@ -231,14 +231,14 @@ export class ExpandMacro implements ASTVisitor {
     async derive(
         metaItem: MetaItemNode,
         node: StructNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
         if (metaItem.meta) {
             for (const arg of metaItem.meta) {
                 if (arg.meta && arg.meta.path && arg.meta.path.name.length > 0) {
                     const name = arg.meta.path.name[0];
 
-                    const fun = frame.get(name);
+                    const fun = env.get(name);
 
                     if (!(fun instanceof FunctionDecNode)) {
                         throw new Error(`Macro '${name}' couldn't be found`)
@@ -267,7 +267,7 @@ export class ExpandMacro implements ASTVisitor {
 
                     for (let src of node.body) {
                         if (src instanceof FieldNode) {
-                            const _t = await this.visit(src, { frame, module })
+                            const _t = await this.visit(src, { env, module })
 
                             if (_t?.tag == "array")
                                 tokens.push(..._t.value);
@@ -322,13 +322,13 @@ export class ExpandMacro implements ASTVisitor {
 
     async visitMacroFunction(
         node: MacroFunctionNode,
-        { frame, module }: { frame: Frame, module: Module }
+        { env, module }: { env: EEnv, module: Module }
     ) {
         const name = node.name.name[0];
         const reg = Registry.get_instance();
         const module_path = `${module.get_path()}::${name}`;
 
-        // console.log(frame.get(name));
+        // console.log(env.get(name));
 
         const macro = reg.get_macro(module_path);
 
@@ -341,7 +341,7 @@ export class ExpandMacro implements ASTVisitor {
         tokens.push(new EnumType("Op", new TupleType([new StringType("[")])))
 
         for (let [index, src] of node.args.entries()) {
-            const token = await this.visit(src, { frame, module });
+            const token = await this.visit(src, { env, module });
             if (token?.tag == "single") {
                 tokens.push(token.value)
             } else if (token?.tag == "array") {
@@ -361,8 +361,8 @@ export class ExpandMacro implements ASTVisitor {
         replace_node(node, ast);
     }
 
-    async visitScopedIdentifier(
-        node: ScopedIdentifierNode,
+    async visitPath(
+        node: PathNode,
         args?: Record<string, any>
     ) {
         if (node.name.length == 1) {

@@ -4,11 +4,17 @@ import {
     create_object,
     FunctionDecNode,
     IdentifierNode,
+    init_num,
     Module,
 } from "./types";
 
 export const add_builtins = async (builtin: Record<string, Builtin>, { root, }: { root: Module }) => {
-    let module = new Module("builtin", null, "builtin", true);
+    let module = new Module(
+        "builtin",
+        null,
+        "builtin",
+        true
+    );
 
     root.add_submodule(module);
 
@@ -23,9 +29,9 @@ export const add_builtins = async (builtin: Record<string, Builtin>, { root, }: 
                     true,
                     value.async
                 );
-                module.frame.define(key, inbuiltFunction);
+                module.env.define(key, inbuiltFunction);
             } else if (value.type == "variable") {
-                module.frame.define(key, create_object(value.value));
+                module.env.define(key, create_object(value.value));
             }
-        })
+        });
 }
