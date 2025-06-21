@@ -26,6 +26,10 @@ export class FatMap<K, V> {
         return this.data.entries();
     }
 
+    values() {
+        return this.data.values();
+    }
+
     toJSON(serializer: Serializer) {
         return {
             format: "lugha",

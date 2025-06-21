@@ -10,6 +10,7 @@ import {
 
 import {
     lugha,
+    pipe_codegen,
     pipe_desugar,
     pipe_desugartc,
     pipe_lp,
@@ -51,13 +52,13 @@ export async function exec({
             pipeline: [
                 pipe_read,
                 pipe_lp,
-                pipe_tc,
                 // pipe_procmacro,
                 // pipe_expandmacro,
                 //pipe_desugar,
                 // pipe_borrowcheck,
-                //pipe_typecheck,
+                pipe_tc,
                 //pipe_desugartc,
+                //pipe_codegen,
                 //pipe_xmachina
             ],
             wd: a.dir,

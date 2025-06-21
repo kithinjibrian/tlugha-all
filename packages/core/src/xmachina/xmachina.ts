@@ -888,12 +888,14 @@ export class XMachina implements ASTVisitor {
             root: async () => {
                 const path = frame.state.get("path");
 
-                const module = this.root.children.find(m => m.name === path[0]);
+                const module = frame.module.children.find(m => m.name === path[0]);
 
                 if (module) {
                     frame.state.set("module", module);
                     frame.state.phase = "find_target";
                     return false;
+                } else {
+                    // try searching from the root
                 }
 
                 frame.state.phase = "error";

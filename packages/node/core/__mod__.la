@@ -1,8 +1,2 @@
-struct Num;
-struct Str;
-
-impl Num {
-    fun sqrt(self: Self): Self {
-        10
-    }
-}
+import types;
+import methods;

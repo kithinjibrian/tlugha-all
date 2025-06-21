@@ -1,9 +1,10 @@
-module A {
-    struct Coro;
+enum Option<T> {
+    Some(T),
+    None
+}
 
-    impl Coro {
-        fun next(): Self {
-            10
-        }
+impl Option {
+    fun is_none(self: Option): bool {
+        true
     }
 }

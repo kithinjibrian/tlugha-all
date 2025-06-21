@@ -1,7 +1,13 @@
 import { Type, TypeVariable } from "./tc_type";
 
 export class Subst {
-    public subst: Map<string, Type> = new Map();
+    public subst: Map<string, Type>;
+
+    constructor(
+        def?: Subst
+    ) {
+        this.subst = def ? new Map<string, Type>(def.subst) : new Map<string, Type>();
+    }
 
     public set(t1: TypeVariable, t2: Type) {
         this.subst.set(t1.name, t2);
@@ -9,6 +15,10 @@ export class Subst {
 
     public get(t1: TypeVariable): Type | undefined {
         return this.subst.get(t1.name);
+    }
+
+    public delete(name: string) {
+        this.subst.delete(name);
     }
 
     public compose(other: Subst): Subst {
@@ -43,4 +53,14 @@ export class Subst {
     entries(): IterableIterator<[string, Type]> {
         return this.subst.entries();
     }
+}
+
+let global_subst = new Subst();
+
+export function get_global_subst() {
+    return global_subst;
+}
+
+export function set_global_subst(subst: Subst) {
+    global_subst = subst;
 }

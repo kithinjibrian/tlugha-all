@@ -1,3 +1,4 @@
+import { StructType, Type } from "../tc/tc_type";
 import { Types } from "../typechecker/type";
 import {
     ArrayNode,
@@ -34,10 +35,8 @@ import {
 
 
 export class DesugarTC implements ASTVisitor {
-    private extension: ExtensionStore<unknown> =
-        ExtensionStore.get_instance("desugar_tc");
-
     public pipes: any = [];
+    public inbuilt = ["Num", "Str", "Map", "Set", "Bool", "Unit", "Tuple", "Array"]
 
     constructor(
         public file: string,
@@ -87,33 +86,16 @@ export class DesugarTC implements ASTVisitor {
         node: ASTNode,
         args?: Record<string, any>
     ) {
-        //  console.log("desugartc", node.type)
-        for (const ext of this.extension.get_extensions()) {
-            await ext.before_accept?.(node, this, args)
-        }
+        //   console.log("desugartc", node.type)
     }
 
     public async visit(node?: ASTNode, args?: Record<string, any>): Promise<any> {
         if (node == undefined) return;
 
-        let handledByExtension = false;
-
-        for (const ext of this.extension.get_extensions()) {
-            if (ext.handle_node) {
-                const result = await ext.handle_node(node, this, args);
-                if (result === true) {
-                    handledByExtension = true;
-                    break;
-                }
-            }
-        }
-
-        if (!handledByExtension) {
-            try {
-                return await node.accept(this, args);
-            } catch (error) {
-                throw error;
-            }
+        try {
+            return await node.accept(this, args);
+        } catch (error) {
+            throw error;
         }
     }
 
@@ -121,9 +103,6 @@ export class DesugarTC implements ASTVisitor {
         node: ASTNode,
         args?: Record<string, any>
     ) {
-        for (const ext of this.extension.get_extensions()) {
-            await ext.after_accept?.(node, this, args)
-        }
     }
 
     async start(tc: DesugarTC) {
@@ -148,7 +127,7 @@ export class DesugarTC implements ASTVisitor {
 
         await next();
 
-        console.log("DONE DESUGARING TC!!!")
+        //    console.log("DONE DESUGARING TC!!!")
     }
 
     async visitProgram(node: ProgramNode, args?: Record<string, any>) {
@@ -203,8 +182,6 @@ export class DesugarTC implements ASTVisitor {
         node: VariableNode,
         { env, module }: { env: EEnv, module: Module }
     ) {
-        //  console.log(node.data_type);
-
         env.define(node.identifier.name, node.data_type);
 
         await this.visit(node.expression, { env, module });
@@ -265,13 +242,10 @@ export class DesugarTC implements ASTVisitor {
 
         const n = await this.visit(node.object, { ...args, type: "raw" });
 
-
         if (node.property instanceof IdentifierNode) {
-            const type = n.trec.types[node.property.name];
-
-            const $ = this.type(type, "type");
-
-            return $;
+            if (n[0] instanceof StructType) {
+                return n[0].fields.get(node.property.name);
+            }
         }
 
         throw new Error("Member expression is computed");
@@ -330,63 +304,24 @@ export class DesugarTC implements ASTVisitor {
         return left;
     }
 
-    type(type: Types, kind: "raw" | "ops" | "methods" | "type" = "ops") {
-        if (type.tag == "TCon") {
-            switch (type.tcon.name) {
-                case "num":
-                    return "Num";
-                case "Array":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Array"]
+    type(type: Type, kind: "raw" | "ops" | "methods" | "type" = "ops") {
+        if (type instanceof StructType) {
+            switch (kind) {
+                case "methods":
+                    if (this.inbuilt.includes(type.name)) {
+                        return ["core", "methods", type.name];
+                    } else {
+                        return [type.name]
                     }
-            }
-        }
+                case "raw":
+                    return [type];
 
-        if (type.tag == "TRec") {
-            switch (type.trec.name) {
-                case "Map":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Map"]
-                    }
-                    break;
-                case "Set":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Set"]
-                    }
-                    break;
-                case "Array":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Array"]
-                    }
-                    break;
-                case "Str":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Str"]
-                    }
-                    break;
-                case "Bool":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Bool"]
-                    }
-                case "Num":
-                    if (kind == "methods") {
-                        return ["core", "methods", "Num"]
-                    } else if (kind == "ops") {
-                        return ["core", "ops", "Num"]
-                    }
                 default:
-                    if (kind == "raw") {
-                        return type;
-                    }
-                    return [type.trec.name];
+                    break;
             }
         }
 
-        if (type.tag == "TSum") {
-            return [type.tsum.name];
-        }
-
-        return undefined;
+        return [];
     }
 
     async visitImpl(node: ImplNode, args?: Record<string, any>) {
@@ -463,3 +398,62 @@ export class DesugarTC implements ASTVisitor {
         return "Str"
     }
 }
+
+/*
+
+        if (type.tag == "TCon") {
+            switch (type.tcon.name) {
+                case "num":
+                    return "Num";
+                case "Array":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Array"]
+                    }
+            }
+        }
+
+        if (type.tag == "TRec") {
+            switch (type.trec.name) {
+                case "Map":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Map"]
+                    }
+                    break;
+                case "Set":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Set"]
+                    }
+                    break;
+                case "Array":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Array"]
+                    }
+                    break;
+                case "Str":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Str"]
+                    }
+                    break;
+                case "Bool":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Bool"]
+                    }
+                case "Num":
+                    if (kind == "methods") {
+                        return ["core", "methods", "Num"]
+                    } else if (kind == "ops") {
+                        return ["core", "ops", "Num"]
+                    }
+                default:
+                    if (kind == "raw") {
+                        return type;
+                    }
+                    return [type.trec.name];
+            }
+        }
+
+        if (type.tag == "TSum") {
+            return [type.tsum.name];
+        }
+
+*/

@@ -18,6 +18,15 @@ export class Module {
         this.env = new EEnv(parent_env, `${this.name}_env`);
     }
 
+    static get_root(mod: Module): Module {
+        let root = mod;
+        while (root.parent) {
+            root = root.parent;
+        }
+
+        return root;
+    }
+
     toJSON(serializer: Serializer): any {
         return {
             format: "lugha",

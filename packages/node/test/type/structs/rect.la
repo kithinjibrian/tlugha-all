@@ -1,0 +1,17 @@
+struct Rect<T> {
+    width: T,
+    height: num
+}
+
+impl Rect {
+    fun wid(self: Self): num {
+        10
+    }
+}
+
+let b: Rect = Rect {
+    width: 10,
+    height: 87
+};
+
+let d: num = b.wid();

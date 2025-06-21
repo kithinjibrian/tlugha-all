@@ -6,12 +6,12 @@ enum CoroOut<Y, C> {
     Dead
 }
 
-impl Coro {
-    fun create(self: Coro): Coro {
-        root::builtin::__coro_create__(self)
-    }
+// impl Coro {
+//     fun create(self: Coro): Coro {
+//         root::builtin::__coro_create__(self)
+//     }
 
-    fun resume<T>(self: Coro, args: T): CoroOut {
-        root::builtin::__coro_resume__(self, args)
-    }
-}
+//     fun resume<T>(self: Coro, args: T): CoroOut {
+//         root::builtin::__coro_resume__(self, args)
+//     }
+// }

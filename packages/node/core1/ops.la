@@ -1,4 +1,13 @@
-use super::types::{ Num, Str };
+use super::types::{ 
+    Num,
+    Str, 
+    Map, 
+    Set, 
+    Bool, 
+    Unit, 
+    Tuple, 
+    Array
+};
 
 trait Add {
     fun add(self: Self, other: Rhs): Self;
@@ -46,85 +55,85 @@ trait Neq {
 
 impl Add for Num {
     fun add(left: num, right: num): num {
-        root::builtin::__num_add__(left, right)
+        root::builtin::__num_add__((left, right))
     }
 }
 
 impl Sub for Num {
     fun sub(left: num, right: num): num {
-        root::builtin::__num_sub__(left, right)
+        root::builtin::__num_sub__((left, right))
     }
 }
 
 impl Mul for Num {
     fun mul(left: num, right: num): num {
-        root::builtin::__num_mul__(left, right)
+        root::builtin::__num_mul__((left, right))
     }
 }
 
 impl Div for Num {
     fun div(left: num, right: num): num {
-        root::builtin::__num_div__(left, right)
+        root::builtin::__num_div__((left, right))
     }
 }
 
 impl Mod for Num {
     fun mod(left: num, right: num): num {
-        root::builtin::__num_mod__(left, right)
+        root::builtin::__num_mod__((left, right))
     }
 }
 
 impl Lt for Num {
     fun lt(left: num, right: num): bool {
-        root::builtin::__num_lt__(left, right)
+        root::builtin::__num_lt__((left, right))
     }
 }
 
 impl Lte for Num {
     fun lte(left: num, right: num): bool {
-        root::builtin::__num_lte__(left, right)
+        root::builtin::__num_lte__((left, right))
     }
 }
 
 impl Gt for Num {
     fun gt(left: num, right: num): bool {
-        root::builtin::__num_gt__(left, right)
+        root::builtin::__num_gt__((left, right))
     }
 }
 
 impl Gte for Num {
     fun gte(left: num, right: num): bool {
-        root::builtin::__num_gte__(left, right)
+        root::builtin::__num_gte__((left, right))
     }
 }
 
 impl Eq for Num {
     fun eq(left: num, right: num): bool {
-        root::builtin::__num_eq__(left, right)
+        root::builtin::__num_eq__((left, right))
     }
 }
 
 impl Neq for Num {
     fun neq(left: num, right: num): bool {
-        root::builtin::__num_neq__(left, right)
+        root::builtin::__num_neq__((left, right))
     }
 }
 
 // string ops
 impl Add for Str {
     fun add(left: str, right: str): str {
-        root::builtin::__str_add__(left, right)
+        root::builtin::__str_add__((left, right))
     }
 }
 
 impl Eq for Str {
     fun eq(left: str, right: str): bool {
-        root::builtin::__str_eq__(left, right)
+        root::builtin::__str_eq__((left, right))
     }
 }
 
 impl Neq for Str {
     fun neq(left: str, right: str): bool {
-        root::builtin::__str_neq__(left, right)
+        root::builtin::__str_neq__((left, right))
     }
 }

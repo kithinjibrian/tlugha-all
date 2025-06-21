@@ -154,7 +154,7 @@ export class Desugar implements ASTVisitor {
 
         await next();
 
-        console.log("DONE DESUGARING!!!")
+        //   console.log("DONE DESUGARING!!!")
     }
 
     async visitProgram(node: ProgramNode, args?: Record<string, any>) {

@@ -1,3 +1,1 @@
-fun a(b: num): num {
-    b
-}
+let a = 90;
